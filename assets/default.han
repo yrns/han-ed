@@ -1,0 +1,67 @@
+(
+  name: "default",
+  capacity: 32768,
+  spawner: (
+    num_particles: Single(32.0),
+    spawn_time: Single(0.0),
+    period: Single(inf),
+    starts_active: true,
+    starts_immediately: true,
+  ),
+  z_layer_2d: 0.0,
+  simulation_space: Global,
+  simulation_condition: WhenVisible,
+  init_position: Circle((
+    center: (0.0, 0.1, 0.0),
+    axis: (0.0, 1.0, 0.0),
+    radius: 0.4,
+    dimension: Surface,
+  )),
+  init_velocity: Some(Circle((
+    center: (0.0, 0.0, 0.0),
+    axis: (0.0, 1.0, 0.0),
+    speed: Uniform((1.0, 1.5)),
+  ))),
+  init_size: None,
+  init_age: None,
+  init_lifetime: Some((
+    lifetime: Single(5.0),
+  )),
+  update_accel: None,
+  update_force_field: None,
+  update_linear_drag: None,
+  update_aabb_kill: None,
+  render_particle_texture: Some("plus.png"),
+  render_set_color: None,
+  render_color_over_lifetime: Some((
+    gradient: (
+      keys: [
+        (
+          ratio: 0.0,
+          value: (1.0, 1.0, 1.0, 1.0),
+        ),
+        (
+          ratio: 0.5,
+          value: (1.0, 1.0, 1.0, 1.0),
+        ),
+        (
+          ratio: 1.0,
+          value: (1.0, 1.0, 1.0, 0.0),
+        ),
+      ],
+    ),
+  )),
+  render_set_size: None,
+  render_size_over_lifetime: Some((
+    gradient: (
+      keys: [
+        (
+          ratio: 0.0,
+          value: (0.2, 0.2),
+        ),
+      ],
+    ),
+  )),
+  render_billboard: None,
+  render_orient_along_velocity: None,
+)
