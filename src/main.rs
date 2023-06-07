@@ -264,7 +264,7 @@ fn han_ed_ui(
 }
 
 fn ui_spawner(spawner: &mut Spawner, ui: &mut egui::Ui) -> egui::Response {
-    CollapsingHeader::new("Spawner")
+    let response = CollapsingHeader::new("Spawner")
         .default_open(true)
         .show(ui, |ui| {
             ui_value("Particles", &mut spawner.num_particles, "", ui)
@@ -272,9 +272,9 @@ fn ui_spawner(spawner: &mut Spawner, ui: &mut egui::Ui) -> egui::Response {
                 | ui_value("Period", &mut spawner.period, "s", ui)
                 | ui.checkbox(&mut spawner.starts_active, "Starts Active")
                 | ui.checkbox(&mut spawner.starts_immediately, "Starts Immediately")
-        })
-        .body_response
-        .unwrap()
+        });
+
+    response.body_response.unwrap_or(response.header_response)
 }
 
 // TODO hover descriptions
