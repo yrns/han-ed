@@ -1,12 +1,11 @@
-use std::path::PathBuf;
+//use std::path::PathBuf;
 
 use bevy::{prelude::*, reflect::TypeUuid};
 //use bevy::reflect::*;
 use bevy_hanabi::prelude::*;
-use serde::{Deserialize, Serialize};
 
 // This is all to get around the fact that EffectAsset cannot be serialized.
-#[derive(Default, Clone, TypeUuid, Reflect, FromReflect, Serialize, Deserialize)]
+#[derive(Default, Clone, TypeUuid, Reflect, FromReflect)]
 #[uuid = "2933798f-a750-44c4-b7f9-0b7055368944"]
 pub struct REffect {
     pub name: String,
@@ -33,7 +32,8 @@ pub struct REffect {
     pub update_aabb_kill: Option<AabbKillModifier>,
 
     // RenderModifier(s)
-    pub render_particle_texture: Option<PathBuf>,
+    //pub render_particle_texture: Option<PathBuf>,
+    pub render_particle_texture: Option<ParticleTextureModifier>,
     pub render_set_color: Option<SetColorModifier>,
     pub render_color_over_lifetime: Option<ColorOverLifetimeModifier>,
     pub render_set_size: Option<SetSizeModifier>,
@@ -42,7 +42,7 @@ pub struct REffect {
     pub render_orient_along_velocity: Option<OrientAlongVelocityModifier>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Reflect, FromReflect, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Reflect, FromReflect)]
 pub enum InitPosition {
     Circle(InitPositionCircleModifier),
     Sphere(InitPositionSphereModifier),
@@ -59,7 +59,7 @@ impl Default for InitPosition {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Reflect, FromReflect, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Reflect, FromReflect)]
 pub enum InitVelocity {
     Circle(InitVelocityCircleModifier),
     Sphere(InitVelocitySphereModifier),
@@ -76,7 +76,7 @@ impl Default for InitVelocity {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Reflect, FromReflect, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Reflect, FromReflect)]
 pub enum UpdateAccel {
     Linear(AccelModifier),
     Radial(RadialAccelModifier),
@@ -91,7 +91,7 @@ impl Default for UpdateAccel {
 
 impl REffect {
     // We need to asset server to load the texture.
-    pub fn to_effect_asset(&self, asset_server: &AssetServer) -> EffectAsset {
+    pub fn to_effect_asset(&self, _asset_server: &AssetServer) -> EffectAsset {
         let mut effect = EffectAsset {
             name: self.name.clone(),
             capacity: self.capacity,
@@ -149,11 +149,15 @@ impl REffect {
         }
 
         // The texture is serialized as a path.
-        if let Some(path) = self.render_particle_texture.as_ref() {
-            effect = effect.render(ParticleTextureModifier {
-                texture: asset_server.load(path.as_path()),
-            });
+        // if let Some(path) = self.render_particle_texture.as_ref() {
+        //     effect = effect.render(ParticleTextureModifier {
+        //         texture: asset_server.load(path.as_path()),
+        //     });
+        // }
+        if let Some(m) = self.render_particle_texture.as_ref() {
+            effect = effect.render(m.clone());
         }
+
         if let Some(m) = self.render_set_color.as_ref() {
             effect = effect.render(m.clone());
         }

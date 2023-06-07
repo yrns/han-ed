@@ -1,7 +1,7 @@
 pub mod asset;
 pub mod reffect;
 
-use std::{fs::File, io::Write};
+use std::{fs::File, io::Write, mem::discriminant};
 
 use asset::*;
 
@@ -9,12 +9,12 @@ use bevy::{
     core_pipeline::bloom::BloomSettings,
     log::LogPlugin,
     prelude::*,
+    reflect::serde::ReflectSerializer,
     render::{render_resource::WgpuFeatures, settings::WgpuSettings, RenderPlugin},
-    scene::*,
     tasks::IoTaskPool,
 };
 use bevy_egui::{
-    egui::{self, CollapsingHeader},
+    egui::{self, widgets::DragValue, CollapsingHeader},
     EguiContexts, EguiPlugin,
 };
 use bevy_hanabi::prelude::*;
@@ -53,9 +53,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .add_system(bevy::window::close_on_esc)
         .add_plugin(HanabiPlugin)
+        .register_type::<InitPosition>()
+        .register_type::<InitVelocity>()
+        .register_type::<Option<InitVelocity>>()
+        .register_type::<UpdateAccel>()
+        .register_type::<Option<UpdateAccel>>()
         //.register_type::<REffect>() add_asset::<T> registers Handle<T>
         .add_asset::<REffect>()
-        .init_asset_loader::<asset::HanAssetLoader>()
+        .register_asset_reflect::<REffect>()
+        .init_asset_loader::<asset::HanLoader>()
         .insert_resource(AssetPaths::<REffect>::new("han"))
         .add_plugin(EguiPlugin)
         // .add_plugin(bevy_inspector_egui::quick::AssetInspectorPlugin::<
@@ -114,6 +120,7 @@ fn han_ed_ui(
         &mut ParticleEffect,
         &mut LiveEffect,
     )>,
+    type_registry: Res<AppTypeRegistry>,
 ) {
     // let mut ctx = world
     //     .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
@@ -132,7 +139,7 @@ fn han_ed_ui(
                 ui.horizontal(|ui| {
                     ui.label("Bloom:");
                     ui.add(
-                        egui::widgets::DragValue::new(&mut bloom.intensity)
+                        DragValue::new(&mut bloom.intensity)
                             .clamp_range(0.0..=1.0)
                             .speed(0.01),
                     );
@@ -172,11 +179,12 @@ fn han_ed_ui(
                     match handle {
                         Some(handle) => match reffects.get_mut(&handle) {
                             Some(re) => {
-                                CollapsingHeader::new(&re.name)
+                                CollapsingHeader::new(path.to_string_lossy())
                                     .default_open(true)
                                     .show(ui, |ui| {
                                         ui.horizontal(|ui| {
-                                            ui.label(format!("{}", re.name));
+                                            ui.label("Name");
+                                            ui.text_edit_singleline(&mut re.name);
 
                                             if let Some((entity, ..)) = live_effects
                                                 .iter()
@@ -199,13 +207,24 @@ fn han_ed_ui(
                                             }
 
                                             // TODO confirm overwrite if the name has changed
+                                            // only enable if there are unsaved changes
                                             if ui.button("Save").clicked() {
                                                 #[cfg(not(target_arch = "wasm32"))]
                                                 let file_name = format!("assets/{}.han", re.name);
+                                                // Clone so that we can serialize in a different thread?
                                                 let effect = re.clone();
+                                                let tr = type_registry.clone(); // Arc
                                                 IoTaskPool::get()
                                                     .spawn(async move {
-                                                        let ron = serialize_ron(effect).unwrap();
+                                                        let tr = tr.read();
+                                                        let rs =
+                                                            ReflectSerializer::new(&effect, &tr);
+                                                        let ron = ron::ser::to_string_pretty(
+                                                            &rs,
+                                                            ron::ser::PrettyConfig::new(),
+                                                        )
+                                                        .unwrap();
+                                                        //let ron = serialize_ron(effect).unwrap();
                                                         File::create(file_name)
                                                             .and_then(|mut file| {
                                                                 file.write(ron.as_bytes())
@@ -214,11 +233,22 @@ fn han_ed_ui(
                                                     })
                                                     .detach();
                                             }
+
+                                            // TODO
+                                            _ = ui.button("Clone");
+                                            _ = ui.button("-");
                                         });
+
+                                        ui.horizontal(|ui| {
+                                            ui.label("Capacity");
+                                            ui.add(DragValue::new(&mut re.capacity));
+                                        });
+
+                                        ui_spawner(&mut re.spawner, ui);
                                     });
                             }
                             None => {
-                                ui.label("..."); // loading still
+                                ui.spinner(); // loading still
                             }
                         },
                         None => {
@@ -231,6 +261,88 @@ fn han_ed_ui(
                 }
             });
     });
+}
+
+fn ui_spawner(spawner: &mut Spawner, ui: &mut egui::Ui) -> egui::Response {
+    CollapsingHeader::new("Spawner")
+        .default_open(true)
+        .show(ui, |ui| {
+            ui_value("Particles", &mut spawner.num_particles, "", ui)
+                | ui_value("Spawn Time", &mut spawner.spawn_time, "s", ui)
+                | ui_value("Period", &mut spawner.period, "s", ui)
+                | ui.checkbox(&mut spawner.starts_active, "Starts Active")
+                | ui.checkbox(&mut spawner.starts_immediately, "Starts Immediately")
+        })
+        .body_response
+        .unwrap()
+}
+
+// TODO hover descriptions
+// TODO left-click 0, right-click INF?
+fn ui_value(name: &str, value: &mut Value<f32>, suffix: &str, ui: &mut egui::Ui) -> egui::Response {
+    ui.horizontal(|ui| {
+        ui.label(name);
+
+        let cb = egui::ComboBox::from_id_source(ui.id().with(name))
+            .selected_text(match value {
+                Value::Single(_) => "Single",
+                Value::Uniform(_) => "Uniform",
+                _ => "Unhandled",
+            })
+            .show_ui(ui, |ui| {
+                let mut single = ui.selectable_label(
+                    discriminant(value) == discriminant(&Value::Single(0.0)),
+                    "Single",
+                );
+
+                if single.clicked() {
+                    match value {
+                        Value::Uniform((v, _)) => {
+                            *value = Value::Single(*v);
+                            single.mark_changed();
+                        }
+                        _ => (),
+                    }
+                }
+
+                let mut uniform = ui.selectable_label(
+                    discriminant(value) == discriminant(&Value::Uniform((0.0, 0.0))),
+                    "Uniform",
+                );
+
+                if uniform.clicked() {
+                    match value {
+                        Value::Single(v) => {
+                            *value = Value::Uniform((*v, *v));
+                            uniform.mark_changed();
+                        }
+                        _ => (),
+                    }
+                }
+
+                single | uniform
+            })
+            .response;
+
+        if cb.changed {
+            dbg!(cb.changed);
+        }
+
+        cb | match value {
+            Value::Single(ref mut v) => ui.add(DragValue::new(v).suffix(suffix)),
+            Value::Uniform(v) => {
+                ui.add(DragValue::new(&mut v.0).clamp_range(0.0..=v.1))
+                    | ui.label("-")
+                    | ui.add(
+                        DragValue::new(&mut v.1)
+                            .clamp_range(v.0..=f32::MAX)
+                            .suffix(suffix),
+                    )
+            }
+            _ => ui.colored_label(ui.visuals().error_fg_color, "unhandled value type"),
+        }
+    })
+    .response
 }
 
 #[allow(unused)]
