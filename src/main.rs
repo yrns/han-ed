@@ -19,6 +19,7 @@ use bevy_egui::{
 };
 use bevy_hanabi::prelude::*;
 
+use bevy_inspector_egui::reflect_inspector::*;
 use reffect::*;
 
 #[derive(Component)]
@@ -179,6 +180,8 @@ fn han_ed_ui(
                     match handle {
                         Some(handle) => match reffects.get_mut(&handle) {
                             Some(re) => {
+                                let mut re_changed = false;
+
                                 CollapsingHeader::new(path.to_string_lossy())
                                     .default_open(true)
                                     .show(ui, |ui| {
@@ -245,7 +248,31 @@ fn han_ed_ui(
                                         });
 
                                         ui_spawner(&mut re.spawner, ui);
+
+                                        // Set up context for reflect values.
+                                        let mut cx = Context::default();
+                                        let tr = type_registry.read();
+                                        let mut env =
+                                            InspectorUi::new_no_short_circuit(&tr, &mut cx);
+
+                                        re_changed |= ui_reflect(
+                                            "Simulation Space",
+                                            &mut re.simulation_space,
+                                            &mut env,
+                                            ui,
+                                        );
+
+                                        re_changed |= ui_reflect(
+                                            "Simulation Condition",
+                                            &mut re.simulation_condition,
+                                            &mut env,
+                                            ui,
+                                        );
                                     });
+
+                                if re_changed {
+                                    // regenerate (if live)
+                                }
                             }
                             None => {
                                 ui.spinner(); // loading still
@@ -261,6 +288,19 @@ fn han_ed_ui(
                 }
             });
     });
+}
+
+fn ui_reflect<T: Reflect>(
+    label: &str,
+    data: &mut T,
+    env: &mut InspectorUi,
+    ui: &mut egui::Ui,
+) -> bool {
+    ui.horizontal(|ui| {
+        ui.label(label);
+        env.ui_for_reflect_with_options(data, ui, ui.id().with(label), &())
+    })
+    .inner
 }
 
 fn ui_spawner(spawner: &mut Spawner, ui: &mut egui::Ui) -> egui::Response {
