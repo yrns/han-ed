@@ -111,7 +111,7 @@ fn han_ed_ui(
     mut contexts: EguiContexts,
     mut cameras: Query<(&mut Camera, &mut BloomSettings)>,
     asset_server: Res<AssetServer>,
-    _images: Res<Assets<Image>>,
+    images: Res<Assets<Image>>,
     mut reffect_paths: ResMut<AssetPaths<REffect>>,
     mut effects: ResMut<Assets<EffectAsset>>,
     mut reffects: ResMut<Assets<REffect>>,
@@ -268,6 +268,44 @@ fn han_ed_ui(
                                             &mut env,
                                             ui,
                                         );
+
+                                        // We need to figure out something else beside default for textures.
+                                        let label = "Particle Texture";
+                                        re_changed |= ui_option(
+                                            label,
+                                            &mut re.render_particle_texture,
+                                            ui,
+                                            |t, ui| {
+                                                egui::ComboBox::from_id_source(ui.id().with(label))
+                                                    .selected_text(format!("{:?}", t.texture))
+                                                    .show_ui(ui, |ui| {
+                                                        // We need to filter out textures that don't work for effects like D3 textures.
+                                                        for (id, _image) in (*images).iter() {
+                                                            let checked = t.texture.id() == id;
+                                                            let resp = ui.selectable_label(
+                                                                checked,
+                                                                // Need to store path, and/or make thumbnails:
+                                                                format!("{:?}", id),
+                                                            );
+
+                                                            if resp.clicked() && !checked {
+                                                                let mut texture = Handle::weak(id);
+                                                                texture.make_strong(&*images);
+                                                                dbg!(&texture);
+                                                                return Some(
+                                                                    ParticleTextureModifier {
+                                                                        texture,
+                                                                    },
+                                                                );
+                                                            }
+                                                        }
+
+                                                        None
+                                                    })
+                                                    .inner
+                                                    .flatten()
+                                            },
+                                        );
                                     });
 
                                 if re_changed {
@@ -288,6 +326,35 @@ fn han_ed_ui(
                 }
             });
     });
+}
+
+fn ui_option<T: Default, F: FnMut(&T, &mut egui::Ui) -> Option<T>>(
+    label: &str,
+    data: &mut Option<T>,
+    ui: &mut egui::Ui,
+    mut f: F,
+) -> bool {
+    ui.horizontal(|ui| {
+        //ui.label(label);
+        let mut opt = data.is_some();
+        if ui.checkbox(&mut opt, label).clicked() {
+            *data = if opt { Some(T::default()) } else { None };
+        }
+
+        match data {
+            Some(v) => {
+                if let Some(new_data) = f(v, ui) {
+                    *data = Some(new_data);
+                    true
+                } else {
+                    false
+                }
+            }
+            // Draw inactive?
+            None => false,
+        }
+    })
+    .inner
 }
 
 fn ui_reflect<T: Reflect>(
