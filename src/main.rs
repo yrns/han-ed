@@ -278,9 +278,23 @@ fn han_ed_ui(
                                             &mut re.render_particle_texture,
                                             ui,
                                             |t, ui| {
+                                                let selected = asset_server
+                                                    .get_handle_path(&t.texture)
+                                                    .map(|asset_path| {
+                                                        format!(
+                                                            "{} ({})",
+                                                            asset_path.path().display(),
+                                                            asset_path
+                                                                .label()
+                                                                .unwrap_or("no label")
+                                                        )
+                                                    })
+                                                    .unwrap_or_else(|| {
+                                                        "??? (no path for asset handle)".to_string()
+                                                    });
                                                 egui::ComboBox::from_id_source(ui.id().with(label))
                                                     // TODO this needs to be the path or something shorter.
-                                                    .selected_text(format!("{:?}", t.texture))
+                                                    .selected_text(selected)
                                                     .show_ui(ui, |ui| {
                                                         // We need to filter out textures that don't work for effects like D3 textures.
                                                         //for (id, _image) in (*images).iter() {
