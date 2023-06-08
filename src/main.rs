@@ -64,6 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .register_asset_reflect::<REffect>()
         .init_asset_loader::<asset::HanLoader>()
         .insert_resource(AssetPaths::<REffect>::new("han"))
+        .insert_resource(AssetPaths::<Image>::new("png"))
         .add_plugin(EguiPlugin)
         // .add_plugin(bevy_inspector_egui::quick::AssetInspectorPlugin::<
         //     EffectAsset,
@@ -111,8 +112,9 @@ fn han_ed_ui(
     mut contexts: EguiContexts,
     mut cameras: Query<(&mut Camera, &mut BloomSettings)>,
     asset_server: Res<AssetServer>,
-    images: Res<Assets<Image>>,
+    _images: Res<Assets<Image>>,
     mut reffect_paths: ResMut<AssetPaths<REffect>>,
+    image_paths: ResMut<AssetPaths<Image>>,
     mut effects: ResMut<Assets<EffectAsset>>,
     mut reffects: ResMut<Assets<REffect>>,
     mut live_effects: Query<(
@@ -277,21 +279,35 @@ fn han_ed_ui(
                                             ui,
                                             |t, ui| {
                                                 egui::ComboBox::from_id_source(ui.id().with(label))
+                                                    // TODO this needs to be the path or something shorter.
                                                     .selected_text(format!("{:?}", t.texture))
                                                     .show_ui(ui, |ui| {
                                                         // We need to filter out textures that don't work for effects like D3 textures.
-                                                        for (id, _image) in (*images).iter() {
-                                                            let checked = t.texture.id() == id;
+                                                        //for (id, _image) in (*images).iter() {
+                                                        for (path, handle) in
+                                                            image_paths.paths.iter()
+                                                        {
+                                                            // Can an effect point to an unloaded image?
+                                                            let checked = handle
+                                                                .as_ref()
+                                                                .map(|h| &t.texture == h)
+                                                                .unwrap_or_default();
+
                                                             let resp = ui.selectable_label(
                                                                 checked,
                                                                 // Need to store path, and/or make thumbnails:
-                                                                format!("{:?}", id),
+                                                                format!("{}", path.display()),
                                                             );
 
                                                             if resp.clicked() && !checked {
-                                                                let mut texture = Handle::weak(id);
-                                                                texture.make_strong(&*images);
-                                                                dbg!(&texture);
+                                                                // Is this really be the only way to make a strong handle from an id?
+                                                                // let mut texture = Handle::weak(id);
+                                                                // texture.make_strong(&*images);
+                                                                let texture = match handle {
+                                                                    Some(h) => h.clone(),
+                                                                    None => asset_server
+                                                                        .load(path.as_path()),
+                                                                };
                                                                 return Some(
                                                                     ParticleTextureModifier {
                                                                         texture,

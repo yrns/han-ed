@@ -61,6 +61,8 @@ impl AssetLoader for HanLoader {
     }
 }
 
+// Does it make sense to merge this with the loader?
+// TODO: add a preview, e.g. thumbnail for images
 #[derive(Resource)]
 pub struct AssetPaths<T: Asset> {
     pub extension: &'static str,
@@ -89,6 +91,13 @@ impl<T: Asset> AssetPaths<T> {
             .unwrap_or_default();
 
         Self { extension, paths }
+    }
+
+    // Iterate all paths with handles.
+    pub fn iter(&self) -> impl Iterator<Item = (&Path, &Handle<T>)> {
+        self.paths
+            .iter()
+            .filter_map(|(p, h)| h.as_ref().map(|h| (p.as_path(), h)))
     }
 }
 
