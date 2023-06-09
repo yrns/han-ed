@@ -3,7 +3,7 @@ use std::path::*;
 use ::serde::de::DeserializeSeed;
 use anyhow::{anyhow, Result};
 use bevy::{
-    asset::{Asset, AssetLoader, LoadContext, LoadedAsset},
+    asset::{Asset, AssetLoader, AssetPath, LoadContext, LoadedAsset},
     prelude::*,
     reflect::{serde::UntypedReflectDeserializer, TypeRegistryArc},
     utils::BoxedFuture,
@@ -49,9 +49,22 @@ impl AssetLoader for HanLoader {
                 )
             })?;
 
-            let reff = <REffect as FromReflect>::take_from_reflect(re).unwrap();
+            let mut reff =
+                <REffect as FromReflect>::take_from_reflect(re).expect("reflect to reffect");
 
-            load_context.set_default_asset(LoadedAsset::new(reff));
+            // Load the particle texture, if set.
+            let loaded_asset = match reff.render_particle_texture {
+                ParticleTexture::Path(path) => {
+                    let asset_path = AssetPath::new_ref(&path, None);
+                    let handle = load_context.get_handle(asset_path.clone());
+                    reff.render_particle_texture = ParticleTexture::Texture(handle);
+                    LoadedAsset::new(reff).with_dependency(asset_path)
+                }
+                _ => LoadedAsset::new(reff),
+            };
+
+            load_context.set_default_asset(loaded_asset);
+
             Ok(())
         })
     }
@@ -131,7 +144,7 @@ pub fn spawn_circle(
         init_lifetime: Some(InitLifetimeModifier {
             lifetime: 5_f32.into(),
         }),
-        render_particle_texture: None, //Some("plus.png".into()),
+        render_particle_texture: asset_server.load("plus.png").into(),
         render_color_over_lifetime: Some(ColorOverLifetimeModifier { gradient }),
         render_size_over_lifetime: Some(SizeOverLifetimeModifier {
             gradient: Gradient::constant([0.2; 2].into()),

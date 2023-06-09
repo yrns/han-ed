@@ -48,11 +48,7 @@
         update_force_field: None,
         update_linear_drag: None,
         update_aabb_kill: None,
-        render_particle_texture: Some((
-            texture: (
-                id: AssetPathId(((12736373505711443168), (6298619649789039366))),
-            ),
-        )),
+        render_particle_texture: Path("plus.png"),
         render_set_color: None,
         render_color_over_lifetime: Some((
             gradient: (

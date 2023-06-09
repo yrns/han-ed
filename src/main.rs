@@ -58,6 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .register_type::<InitVelocity>()
         .register_type::<Option<InitVelocity>>()
         .register_type::<UpdateAccel>()
+        .register_type::<ParticleTexture>()
         .register_type::<Option<UpdateAccel>>()
         //.register_type::<REffect>() add_asset::<T> registers Handle<T>
         .add_asset::<REffect>()
@@ -83,6 +84,10 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    // if let Ok(assets) = asset_server.load_folder(".") {
+    //     dbg!(assets.len());
+    // }
+
     // Camera.
     commands.spawn((
         Camera3dBundle {
@@ -216,8 +221,24 @@ fn han_ed_ui(
                                             if ui.button("Save").clicked() {
                                                 #[cfg(not(target_arch = "wasm32"))]
                                                 let file_name = format!("assets/{}.han", re.name);
-                                                // Clone so that we can serialize in a different thread?
-                                                let effect = re.clone();
+
+                                                // Clone so that we can serialize in a different
+                                                // thread? Also, convert texture to asset path:
+                                                let mut effect = re.clone();
+                                                match &mut effect.render_particle_texture {
+                                                    ParticleTexture::Texture(handle) => {
+                                                        if let Some(path) = asset_server
+                                                            .get_handle_path(handle.id())
+                                                        {
+                                                            effect.render_particle_texture =
+                                                                ParticleTexture::Path(
+                                                                    path.path().to_path_buf(),
+                                                                );
+                                                        }
+                                                    }
+                                                    _ => (),
+                                                }
+
                                                 let tr = type_registry.clone(); // Arc
                                                 IoTaskPool::get()
                                                     .spawn(async move {
@@ -271,70 +292,12 @@ fn han_ed_ui(
                                             ui,
                                         );
 
-                                        // We need to figure out something else beside default for textures.
-                                        let label = "Particle Texture";
-                                        re_changed |= ui_option(
-                                            label,
+                                        re_changed |= ui_particle_texture(
+                                            "Particle Texture",
                                             &mut re.render_particle_texture,
+                                            &asset_server,
+                                            &image_paths,
                                             ui,
-                                            |t, ui| {
-                                                let selected = asset_server
-                                                    .get_handle_path(&t.texture)
-                                                    .map(|asset_path| {
-                                                        format!(
-                                                            "{} ({})",
-                                                            asset_path.path().display(),
-                                                            asset_path
-                                                                .label()
-                                                                .unwrap_or("no label")
-                                                        )
-                                                    })
-                                                    .unwrap_or_else(|| {
-                                                        "??? (no path for asset handle)".to_string()
-                                                    });
-                                                egui::ComboBox::from_id_source(ui.id().with(label))
-                                                    // TODO this needs to be the path or something shorter.
-                                                    .selected_text(selected)
-                                                    .show_ui(ui, |ui| {
-                                                        // We need to filter out textures that don't work for effects like D3 textures.
-                                                        //for (id, _image) in (*images).iter() {
-                                                        for (path, handle) in
-                                                            image_paths.paths.iter()
-                                                        {
-                                                            // Can an effect point to an unloaded image?
-                                                            let checked = handle
-                                                                .as_ref()
-                                                                .map(|h| &t.texture == h)
-                                                                .unwrap_or_default();
-
-                                                            let resp = ui.selectable_label(
-                                                                checked,
-                                                                // Need to store path, and/or make thumbnails:
-                                                                format!("{}", path.display()),
-                                                            );
-
-                                                            if resp.clicked() && !checked {
-                                                                // Is this really be the only way to make a strong handle from an id?
-                                                                // let mut texture = Handle::weak(id);
-                                                                // texture.make_strong(&*images);
-                                                                let texture = match handle {
-                                                                    Some(h) => h.clone(),
-                                                                    None => asset_server
-                                                                        .load(path.as_path()),
-                                                                };
-                                                                return Some(
-                                                                    ParticleTextureModifier {
-                                                                        texture,
-                                                                    },
-                                                                );
-                                                            }
-                                                        }
-
-                                                        None
-                                                    })
-                                                    .inner
-                                                    .flatten()
-                                            },
                                         );
                                     });
 
@@ -358,6 +321,80 @@ fn han_ed_ui(
     });
 }
 
+fn ui_particle_texture(
+    label: &str,
+    data: &mut ParticleTexture,
+    asset_server: &AssetServer,
+    image_paths: &AssetPaths<Image>,
+    ui: &mut egui::Ui,
+) -> bool {
+    ui.horizontal(|ui| {
+        ui.label(label);
+
+        // In the loop below we already have the path, but here we have to fetch it from assets for
+        // the selected texture (if any).
+        let selected = match data.handle() {
+            Some(handle) => asset_server
+                .get_handle_path(handle.id())
+                .map(|asset_path| {
+                    let path = asset_path.path().display();
+                    match asset_path.label() {
+                        // Is there ever a label?
+                        Some(label) => format!("{} ({})", path, label),
+                        None => format!("{}", path),
+                    }
+                })
+                .unwrap_or_else(|| "??? (no path for asset handle)".to_string()),
+            None => "None".into(),
+        };
+
+        egui::ComboBox::from_id_source(ui.id().with(label))
+            .selected_text(selected)
+            .show_ui(ui, |ui| {
+                // None is the first option.
+                if ui
+                    .selectable_value(data, ParticleTexture::None, "None")
+                    .changed
+                {
+                    return true;
+                }
+
+                // We need to filter out textures that don't work for effects like D3 textures.
+                //for (id, _image) in (*images).iter() {
+                for (path, handle) in image_paths.paths.iter() {
+                    // Can an effect point to an unloaded image?
+                    let checked = handle
+                        .as_ref()
+                        .zip(data.handle())
+                        .map(|(a, b)| a == b)
+                        .unwrap_or_default();
+
+                    // Show thumbnails?
+                    let resp = ui.selectable_label(checked, format!("{}", path.display()));
+
+                    if resp.clicked() && !checked {
+                        // Is this really be the only way to make a strong handle from an id?
+                        // let mut texture = Handle::weak(id);
+                        // texture.make_strong(&*images);
+                        let texture = match handle {
+                            Some(h) => h.clone(),
+                            None => asset_server.load(path.as_path()),
+                        };
+
+                        *data = ParticleTexture::Texture(texture);
+                        return true;
+                    }
+                }
+
+                false
+            })
+            .inner
+            .unwrap_or_default()
+    })
+    .inner
+}
+
+#[allow(unused)]
 fn ui_option<T: Default, F: FnMut(&T, &mut egui::Ui) -> Option<T>>(
     label: &str,
     data: &mut Option<T>,

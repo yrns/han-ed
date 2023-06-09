@@ -1,4 +1,4 @@
-//use std::path::PathBuf;
+use std::path::PathBuf;
 
 use bevy::{prelude::*, reflect::TypeUuid};
 //use bevy::reflect::*;
@@ -32,8 +32,7 @@ pub struct REffect {
     pub update_aabb_kill: Option<AabbKillModifier>,
 
     // RenderModifier(s)
-    //pub render_particle_texture: Option<PathBuf>,
-    pub render_particle_texture: Option<ParticleTextureModifier>,
+    pub render_particle_texture: ParticleTexture,
     pub render_set_color: Option<SetColorModifier>,
     pub render_color_over_lifetime: Option<ColorOverLifetimeModifier>,
     pub render_set_size: Option<SetSizeModifier>,
@@ -81,6 +80,41 @@ pub enum UpdateAccel {
     Linear(AccelModifier),
     Radial(RadialAccelModifier),
     Tangent(TangentAccelModifier),
+}
+
+/// Unfortunately, AFAIK, Bevy does not resolve sub-assets referenced in assets serialized via
+/// reflection. It serializes the textures as weak handles which have some correspondence to the
+/// actual asset, but it order to check (compare ids), we'd have to load all the textures in the
+/// asset directory. So instead we serialize the path and swap it out in the asset loader.
+#[derive(Debug, Default, Clone, PartialEq, Reflect, FromReflect)]
+pub enum ParticleTexture {
+    #[default]
+    None,
+    Path(PathBuf),
+    Texture(Handle<Image>),
+}
+
+impl From<Handle<Image>> for ParticleTexture {
+    fn from(handle: Handle<Image>) -> Self {
+        Self::Texture(handle)
+    }
+}
+
+impl ParticleTexture {
+    /// Return a handle to the texture if it exists.
+    pub fn handle(&self) -> Option<&Handle<Image>> {
+        match self {
+            ParticleTexture::None => None,
+            ParticleTexture::Path(path) => {
+                error!(
+                    "texture path for loaded effect asset should not happen: {}",
+                    path.display()
+                );
+                None
+            }
+            ParticleTexture::Texture(handle) => Some(handle),
+        }
+    }
 }
 
 impl Default for UpdateAccel {
@@ -148,14 +182,17 @@ impl REffect {
             effect = effect.update(m.clone());
         }
 
-        // The texture is serialized as a path.
-        // if let Some(path) = self.render_particle_texture.as_ref() {
-        //     effect = effect.render(ParticleTextureModifier {
-        //         texture: asset_server.load(path.as_path()),
-        //     });
-        // }
-        if let Some(m) = self.render_particle_texture.as_ref() {
-            effect = effect.render(m.clone());
+        match self.render_particle_texture {
+            ParticleTexture::Path(ref path) => {
+                // This should never happen since the texture is loaded when the asset is loaded.
+                error!("particle texture not loaded: {}", path.display())
+            }
+            ParticleTexture::Texture(ref handle) => {
+                effect = effect.render(ParticleTextureModifier {
+                    texture: handle.clone(),
+                });
+            }
+            _ => (),
         }
 
         if let Some(m) = self.render_set_color.as_ref() {
