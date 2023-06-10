@@ -176,8 +176,8 @@ fn han_ed_ui(
     //     .clone();
     // ctx.get_mut();
 
-    // .vscroll(true)
-    egui::Window::new("han-ed").show(contexts.ctx_mut(), |ui| {
+    let window = egui::Window::new("han-ed").vscroll(true);
+    window.show(contexts.ctx_mut(), |ui| {
         //ui.ctx().set_debug_on_hover(true);
 
         // show/hide, pause, slow time? reset
