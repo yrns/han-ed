@@ -1,7 +1,7 @@
 pub mod asset;
 pub mod reffect;
 
-use std::{fs::File, io::Write, mem::discriminant};
+use std::{any::Any, fs::File, io::Write, mem::discriminant};
 
 use asset::*;
 
@@ -19,8 +19,37 @@ use bevy_egui::{
 };
 use bevy_hanabi::prelude::*;
 
-use bevy_inspector_egui::reflect_inspector::*;
+use bevy_inspector_egui::{reflect_inspector::*, DefaultInspectorConfigPlugin};
 use reffect::*;
+
+/// Collapsing header and body.
+macro_rules! header {
+    ($ui:ident, $label:literal, $body:expr) => {{
+        let r = CollapsingHeader::new($label)
+            .default_open(true)
+            .show($ui, $body);
+        r.body_response.unwrap_or(r.header_response)
+    }};
+}
+
+/// Label and value.
+macro_rules! value {
+    ($label:literal, $ui:ident, $value:expr, $suffix:literal) => {{
+        let id = $ui.id().with($label);
+        hl!($label, $ui, |ui| ui_value(id, &mut $value, $suffix, ui))
+    }};
+}
+
+/// Horizontal, with label.
+macro_rules! hl {
+    ($label:literal, $ui:ident, $body:expr) => {
+        $ui.horizontal(|ui| {
+            ui.label($label);
+            $body(ui)
+        })
+        .inner
+    };
+}
 
 #[derive(Component)]
 pub struct LiveEffect(Handle<REffect>);
@@ -67,6 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .insert_resource(AssetPaths::<REffect>::new("han"))
         .insert_resource(AssetPaths::<Image>::new("png"))
         .add_plugin(EguiPlugin)
+        .add_plugin(DefaultInspectorConfigPlugin)
         // .add_plugin(bevy_inspector_egui::quick::AssetInspectorPlugin::<
         //     EffectAsset,
         // >::default())
@@ -136,7 +166,10 @@ fn han_ed_ui(
     //     .clone();
     // ctx.get_mut();
 
+    // .vscroll(true)
     egui::Window::new("han-ed").show(contexts.ctx_mut(), |ui| {
+        //ui.ctx().set_debug_on_hover(true);
+
         // show/hide, pause, slow time? reset
         // move entity w/ mouse?
         CollapsingHeader::new("Global")
@@ -275,8 +308,13 @@ fn han_ed_ui(
                                         // Set up context for reflect values.
                                         let mut cx = Context::default();
                                         let tr = type_registry.read();
-                                        let mut env =
-                                            InspectorUi::new_no_short_circuit(&tr, &mut cx);
+                                        let mut env = InspectorUi::new(
+                                            &tr,
+                                            &mut cx,
+                                            Some(short_circuit),
+                                            None,
+                                            None,
+                                        );
 
                                         re_changed |= ui_reflect(
                                             "Simulation Space",
@@ -291,6 +329,23 @@ fn han_ed_ui(
                                             &mut env,
                                             ui,
                                         );
+
+                                        // collapsed header for init/update/render?
+                                        _ = header!(ui, "Initial Modifiers", |ui| {
+                                            ui_reflect(
+                                                "Position",
+                                                &mut re.init_position,
+                                                &mut env,
+                                                ui,
+                                            );
+
+                                            ui_reflect(
+                                                "Init. Velocity",
+                                                &mut re.init_velocity,
+                                                &mut env,
+                                                ui,
+                                            );
+                                        });
 
                                         re_changed |= ui_particle_texture(
                                             "Particle Texture",
@@ -319,6 +374,21 @@ fn han_ed_ui(
                 }
             });
     });
+}
+
+fn short_circuit(
+    _env: &mut InspectorUi,
+    value: &mut dyn Reflect,
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    _options: &dyn Any,
+) -> Option<bool> {
+    if let Some(mut v) = value.downcast_mut::<Value<f32>>() {
+        // Is this id unique enough?
+        return Some(ui_value(id.with("valuef32"), &mut v, "", ui).changed);
+    }
+
+    None
 }
 
 fn ui_particle_texture(
@@ -429,6 +499,7 @@ fn ui_reflect<T: Reflect>(
     data: &mut T,
     env: &mut InspectorUi,
     ui: &mut egui::Ui,
+    //options: &dyn Any
 ) -> bool {
     ui.horizontal(|ui| {
         ui.label(label);
@@ -438,26 +509,28 @@ fn ui_reflect<T: Reflect>(
 }
 
 fn ui_spawner(spawner: &mut Spawner, ui: &mut egui::Ui) -> egui::Response {
-    let response = CollapsingHeader::new("Spawner")
-        .default_open(true)
-        .show(ui, |ui| {
-            ui_value("Particles", &mut spawner.num_particles, "", ui)
-                | ui_value("Spawn Time", &mut spawner.spawn_time, "s", ui)
-                | ui_value("Period", &mut spawner.period, "s", ui)
-                | ui.checkbox(&mut spawner.starts_active, "Starts Active")
-                | ui.checkbox(&mut spawner.starts_immediately, "Starts Immediately")
-        });
-
-    response.body_response.unwrap_or(response.header_response)
+    header!(ui, "Spawner", |ui| {
+        value!("Particles", ui, spawner.num_particles, "")
+            | value!("Spawn Time", ui, spawner.spawn_time, "s")
+            | value!("Period", ui, spawner.period, "s")
+            | ui.checkbox(&mut spawner.starts_active, "Starts Active")
+            | ui.checkbox(&mut spawner.starts_immediately, "Starts Immediately")
+    })
 }
 
 // TODO hover descriptions
 // TODO left-click 0, right-click INF?
-fn ui_value(name: &str, value: &mut Value<f32>, suffix: &str, ui: &mut egui::Ui) -> egui::Response {
+fn ui_value(
+    id: egui::Id,
+    value: &mut Value<f32>,
+    suffix: &str,
+    ui: &mut egui::Ui,
+) -> egui::Response {
+    // The horizontal is needed for when this is used within a reflect value. The reflect ui adds
+    // some odd spacing.
     ui.horizontal(|ui| {
-        ui.label(name);
-
-        let cb = egui::ComboBox::from_id_source(ui.id().with(name))
+        // The combo box label is on the right so we never use it, but we need the label for the unique id.
+        let cb = egui::ComboBox::from_id_source(id)
             .selected_text(match value {
                 Value::Single(_) => "Single",
                 Value::Uniform(_) => "Uniform",
@@ -505,6 +578,7 @@ fn ui_value(name: &str, value: &mut Value<f32>, suffix: &str, ui: &mut egui::Ui)
         cb | match value {
             Value::Single(ref mut v) => ui.add(DragValue::new(v).suffix(suffix)),
             Value::Uniform(v) => {
+                ui.spacing_mut().item_spacing.x = 2.0; // default is 8.0?
                 ui.add(DragValue::new(&mut v.0).clamp_range(0.0..=v.1))
                     | ui.label("-")
                     | ui.add(
@@ -516,7 +590,7 @@ fn ui_value(name: &str, value: &mut Value<f32>, suffix: &str, ui: &mut egui::Ui)
             _ => ui.colored_label(ui.visuals().error_fg_color, "unhandled value type"),
         }
     })
-    .response
+    .inner
 }
 
 #[allow(unused)]
