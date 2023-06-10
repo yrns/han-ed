@@ -25,10 +25,10 @@ use reffect::*;
 /// Collapsing header and body.
 macro_rules! header {
     ($ui:ident, $label:literal, $body:expr) => {{
-        let r = CollapsingHeader::new($label)
+        CollapsingHeader::new($label)
             .default_open(true)
-            .show($ui, $body);
-        r.body_response.unwrap_or(r.header_response)
+            .show($ui, $body)
+            .merge()
     }};
 }
 
@@ -40,12 +40,21 @@ macro_rules! value {
     }};
 }
 
+// So we don't have to explicitly set the type for body in hl!
+#[doc(hidden)]
+fn __contents(
+    ui: &mut egui::Ui,
+    f: impl FnOnce(&mut egui::Ui) -> egui::Response,
+) -> egui::Response {
+    f(ui)
+}
+
 /// Horizontal, with label.
 macro_rules! hl {
     ($label:literal, $ui:ident, $body:expr) => {
         $ui.horizontal(|ui| {
             ui.label($label);
-            $body(ui)
+            __contents(ui, $body)
         })
         .inner
     };
@@ -154,6 +163,7 @@ fn han_ed_ui(
     mut reffects: ResMut<Assets<REffect>>,
     mut live_effects: Query<(
         Entity,
+        &Name,
         &mut EffectSpawner,
         &mut ParticleEffect,
         &mut LiveEffect,
@@ -191,16 +201,31 @@ fn han_ed_ui(
         CollapsingHeader::new("Live")
             .default_open(true)
             .show(ui, |ui| {
-                for (entity, mut spawner, effect, live_effect) in live_effects.iter_mut() {
-                    ui.label(format!(
-                        "{:?}: {:?}, {:?}",
-                        entity, effect.handle, live_effect.0
-                    ));
-                    if ui.button("Reset").clicked() {
-                        spawner.reset();
-                    }
+                for (entity, name, mut spawner, _effect, _live_effect) in live_effects.iter_mut() {
+                    ui.horizontal(|ui| {
+                        ui.label(format!(
+                            "{} ({:?}): active: {} particles: {}",
+                            name,
+                            entity,
+                            spawner.is_active(),
+                            spawner.spawn_count(),
+                        ));
+                        if ui.button("Reset").clicked() {
+                            spawner.reset();
+                        }
+                        if ui.small_button("🗙").clicked() {
+                            commands.get_entity(entity).unwrap().despawn();
+                        }
+                    });
                 }
             });
+
+        // Find the live entity that corresponds to this REffect handle.
+        let live_effect = |h: &Handle<REffect>| {
+            live_effects
+                .iter()
+                .find_map(|(entity, _, _, _, e)| (&e.0 == h).then_some(entity))
+        };
 
         CollapsingHeader::new("Effects")
             .default_open(true)
@@ -220,6 +245,8 @@ fn han_ed_ui(
                     match handle {
                         Some(handle) => match reffects.get_mut(&handle) {
                             Some(re) => {
+                                let live_entity = live_effect(&handle);
+
                                 let mut re_changed = false;
 
                                 CollapsingHeader::new(path.to_string_lossy())
@@ -229,10 +256,7 @@ fn han_ed_ui(
                                             ui.label("Name");
                                             ui.text_edit_singleline(&mut re.name);
 
-                                            if let Some((entity, ..)) = live_effects
-                                                .iter()
-                                                .find(|(_, _, _, e)| &e.0 == handle)
-                                            {
+                                            if let Some(entity) = live_entity {
                                                 if ui.button("Hide").clicked() {
                                                     // Despawn the live effect.
                                                     commands.get_entity(entity).unwrap().despawn();
@@ -245,6 +269,7 @@ fn han_ed_ui(
                                                             re.to_effect_asset(&asset_server),
                                                         )),
                                                         LiveEffect(handle.clone()),
+                                                        Name::new(re.name.clone()),
                                                     ));
                                                 }
                                             }
@@ -298,13 +323,6 @@ fn han_ed_ui(
                                             _ = ui.button("-");
                                         });
 
-                                        ui.horizontal(|ui| {
-                                            ui.label("Capacity");
-                                            ui.add(DragValue::new(&mut re.capacity));
-                                        });
-
-                                        ui_spawner(&mut re.spawner, ui);
-
                                         // Set up context for reflect values.
                                         let mut cx = Context::default();
                                         let tr = type_registry.read();
@@ -316,48 +334,59 @@ fn han_ed_ui(
                                             None,
                                         );
 
-                                        re_changed |= ui_reflect(
-                                            "Simulation Space",
-                                            &mut re.simulation_space,
-                                            &mut env,
-                                            ui,
-                                        );
-
-                                        re_changed |= ui_reflect(
-                                            "Simulation Condition",
-                                            &mut re.simulation_condition,
-                                            &mut env,
-                                            ui,
-                                        );
-
-                                        // collapsed header for init/update/render?
-                                        _ = header!(ui, "Initial Modifiers", |ui| {
-                                            ui_reflect(
-                                                "Position",
-                                                &mut re.init_position,
+                                        re_changed |= (hl!("Capacity", ui, |ui| ui
+                                            .add(DragValue::new(&mut re.capacity)))
+                                            | ui_spawner(&mut re.spawner, ui)
+                                            | ui_reflect(
+                                                "Simulation Space",
+                                                &mut re.simulation_space,
                                                 &mut env,
                                                 ui,
-                                            );
-
-                                            ui_reflect(
-                                                "Init. Velocity",
-                                                &mut re.init_velocity,
+                                            )
+                                            | ui_reflect(
+                                                "Simulation Condition",
+                                                &mut re.simulation_condition,
                                                 &mut env,
                                                 ui,
-                                            );
-                                        });
-
-                                        re_changed |= ui_particle_texture(
-                                            "Particle Texture",
-                                            &mut re.render_particle_texture,
-                                            &asset_server,
-                                            &image_paths,
-                                            ui,
-                                        );
+                                            )
+                                            | header!(ui, "Initial Modifiers", |ui| {
+                                                ui_reflect(
+                                                    "Position",
+                                                    &mut re.init_position,
+                                                    &mut env,
+                                                    ui,
+                                                ) | ui_reflect(
+                                                    "Velocity",
+                                                    &mut re.init_velocity,
+                                                    &mut env,
+                                                    ui,
+                                                )
+                                            })
+                                            | ui_particle_texture(
+                                                "Particle Texture",
+                                                &mut re.render_particle_texture,
+                                                &asset_server,
+                                                &image_paths,
+                                                ui,
+                                            ))
+                                        .changed;
                                     });
 
                                 if re_changed {
-                                    // regenerate (if live)
+                                    // Regenerate (if live).
+                                    if let Some(entity) = live_entity {
+                                        // This is just hide/show. Can we swap something inside the
+                                        // bundle instead?
+                                        commands.get_entity(entity).unwrap().despawn();
+
+                                        commands.spawn((
+                                            ParticleEffectBundle::new(
+                                                effects.add(re.to_effect_asset(&asset_server)),
+                                            ),
+                                            LiveEffect(handle.clone()),
+                                            Name::new(re.name.clone()),
+                                        ));
+                                    }
                                 }
                             }
                             None => {
@@ -375,6 +404,37 @@ fn han_ed_ui(
             });
     });
 }
+
+trait Merge {
+    fn merge(self) -> egui::Response;
+}
+
+impl Merge for egui::InnerResponse<egui::Response> {
+    fn merge(self) -> egui::Response {
+        self.inner | self.response
+    }
+}
+
+// For ComboBox, we only return the item response that's changed, or the header when closed.
+impl Merge for egui::InnerResponse<Option<Option<egui::Response>>> {
+    fn merge(self) -> egui::Response {
+        self.inner.flatten().unwrap_or(self.response)
+    }
+}
+
+// Return the inner response or the header when closed. We don't want the body response since it
+// will never be marked changed.
+impl Merge for egui::containers::CollapsingResponse<egui::Response> {
+    fn merge(self) -> egui::Response {
+        //self.body_response.unwrap_or(self.header_response)
+        self.body_returned.unwrap_or(self.header_response)
+    }
+}
+
+// #[inline]
+// fn merge(ir: egui::InnerResponse<egui::Response>) -> egui::Response {
+//     ir.response | ir.inner
+// }
 
 fn short_circuit(
     _env: &mut InspectorUi,
@@ -397,7 +457,7 @@ fn ui_particle_texture(
     asset_server: &AssetServer,
     image_paths: &AssetPaths<Image>,
     ui: &mut egui::Ui,
-) -> bool {
+) -> egui::Response {
     ui.horizontal(|ui| {
         ui.label(label);
 
@@ -422,11 +482,9 @@ fn ui_particle_texture(
             .selected_text(selected)
             .show_ui(ui, |ui| {
                 // None is the first option.
-                if ui
-                    .selectable_value(data, ParticleTexture::None, "None")
-                    .changed
-                {
-                    return true;
+                let none = ui.selectable_value(data, ParticleTexture::None, "None");
+                if none.changed {
+                    return Some(none);
                 }
 
                 // We need to filter out textures that don't work for effects like D3 textures.
@@ -440,7 +498,7 @@ fn ui_particle_texture(
                         .unwrap_or_default();
 
                     // Show thumbnails?
-                    let resp = ui.selectable_label(checked, format!("{}", path.display()));
+                    let mut resp = ui.selectable_label(checked, format!("{}", path.display()));
 
                     if resp.clicked() && !checked {
                         // Is this really be the only way to make a strong handle from an id?
@@ -452,24 +510,24 @@ fn ui_particle_texture(
                         };
 
                         *data = ParticleTexture::Texture(texture);
-                        return true;
+                        resp.mark_changed();
+                        return Some(resp);
                     }
                 }
 
-                false
+                None
             })
-            .inner
-            .unwrap_or_default()
+            .merge()
     })
     .inner
 }
 
 #[allow(unused)]
-fn ui_option<T: Default, F: FnMut(&T, &mut egui::Ui) -> Option<T>>(
+fn ui_option<T: Default, F: FnOnce(&T, &mut egui::Ui) -> Option<T>>(
     label: &str,
     data: &mut Option<T>,
     ui: &mut egui::Ui,
-    mut f: F,
+    f: F,
 ) -> bool {
     ui.horizontal(|ui| {
         //ui.label(label);
@@ -500,12 +558,15 @@ fn ui_reflect<T: Reflect>(
     env: &mut InspectorUi,
     ui: &mut egui::Ui,
     //options: &dyn Any
-) -> bool {
-    ui.horizontal(|ui| {
+) -> egui::Response {
+    let mut ir = ui.horizontal(|ui| {
         ui.label(label);
         env.ui_for_reflect_with_options(data, ui, ui.id().with(label), &())
-    })
-    .inner
+    });
+    if ir.inner {
+        ir.response.mark_changed()
+    }
+    ir.response
 }
 
 fn ui_spawner(spawner: &mut Spawner, ui: &mut egui::Ui) -> egui::Response {
@@ -530,7 +591,7 @@ fn ui_value(
     // some odd spacing.
     ui.horizontal(|ui| {
         // The combo box label is on the right so we never use it, but we need the label for the unique id.
-        let cb = egui::ComboBox::from_id_source(id)
+        egui::ComboBox::from_id_source(id)
             .selected_text(match value {
                 Value::Single(_) => "Single",
                 Value::Uniform(_) => "Uniform",
@@ -547,6 +608,7 @@ fn ui_value(
                         Value::Uniform((v, _)) => {
                             *value = Value::Single(*v);
                             single.mark_changed();
+                            return Some(single);
                         }
                         _ => (),
                     }
@@ -562,33 +624,29 @@ fn ui_value(
                         Value::Single(v) => {
                             *value = Value::Uniform((*v, *v));
                             uniform.mark_changed();
+                            return Some(uniform);
                         }
                         _ => (),
                     }
                 }
 
-                single | uniform
+                None
             })
-            .response;
-
-        if cb.changed {
-            dbg!(cb.changed);
-        }
-
-        cb | match value {
-            Value::Single(ref mut v) => ui.add(DragValue::new(v).suffix(suffix)),
-            Value::Uniform(v) => {
-                ui.spacing_mut().item_spacing.x = 2.0; // default is 8.0?
-                ui.add(DragValue::new(&mut v.0).clamp_range(0.0..=v.1))
-                    | ui.label("-")
-                    | ui.add(
-                        DragValue::new(&mut v.1)
-                            .clamp_range(v.0..=f32::MAX)
-                            .suffix(suffix),
-                    )
+            .merge()
+            | match value {
+                Value::Single(ref mut v) => ui.add(DragValue::new(v).suffix(suffix)),
+                Value::Uniform(v) => {
+                    ui.spacing_mut().item_spacing.x = 4.0; // default is 8.0?
+                    ui.add(DragValue::new(&mut v.0).clamp_range(0.0..=v.1))
+                        | ui.label("-")
+                        | ui.add(
+                            DragValue::new(&mut v.1)
+                                .clamp_range(v.0..=f32::MAX)
+                                .suffix(suffix),
+                        )
+                }
+                _ => ui.colored_label(ui.visuals().error_fg_color, "unhandled value type"),
             }
-            _ => ui.colored_label(ui.visuals().error_fg_color, "unhandled value type"),
-        }
     })
     .inner
 }
