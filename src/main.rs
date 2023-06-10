@@ -360,15 +360,85 @@ fn han_ed_ui(
                                                     &mut re.init_velocity,
                                                     &mut env,
                                                     ui,
+                                                ) | ui_reflect(
+                                                    "Size",
+                                                    &mut re.init_size,
+                                                    &mut env,
+                                                    ui,
+                                                ) | ui_reflect(
+                                                    "Age",
+                                                    &mut re.init_age,
+                                                    &mut env,
+                                                    ui,
+                                                ) | ui_reflect(
+                                                    "Lifetime",
+                                                    &mut re.init_lifetime,
+                                                    &mut env,
+                                                    ui,
                                                 )
                                             })
-                                            | ui_particle_texture(
-                                                "Particle Texture",
-                                                &mut re.render_particle_texture,
-                                                &asset_server,
-                                                &image_paths,
-                                                ui,
-                                            ))
+                                            | header!(ui, "Update Modifiers", |ui| {
+                                                ui_reflect(
+                                                    "Acceleration",
+                                                    &mut re.update_accel,
+                                                    &mut env,
+                                                    ui,
+                                                ) | ui_reflect(
+                                                    "Force Field",
+                                                    &mut re.update_force_field,
+                                                    &mut env,
+                                                    ui,
+                                                ) | ui_reflect(
+                                                    "Linear Drag",
+                                                    &mut re.update_linear_drag,
+                                                    &mut env,
+                                                    ui,
+                                                ) | ui_reflect(
+                                                    "AABB Kill",
+                                                    &mut re.update_aabb_kill,
+                                                    &mut env,
+                                                    ui,
+                                                )
+                                            })
+                                            | header!(ui, "Render Modifiers", |ui| {
+                                                ui_particle_texture(
+                                                    "Particle Texture",
+                                                    &mut re.render_particle_texture,
+                                                    &asset_server,
+                                                    &image_paths,
+                                                    ui,
+                                                ) | ui_reflect(
+                                                    "Set Color",
+                                                    &mut re.render_set_color,
+                                                    &mut env,
+                                                    ui,
+                                                ) | ui_reflect(
+                                                    "Color Over Lifetime",
+                                                    &mut re.render_color_over_lifetime,
+                                                    &mut env,
+                                                    ui,
+                                                ) | ui_reflect(
+                                                    "Set Size",
+                                                    &mut re.render_set_size,
+                                                    &mut env,
+                                                    ui,
+                                                ) | ui_reflect(
+                                                    "Size Over Lifetime",
+                                                    &mut re.render_size_over_lifetime,
+                                                    &mut env,
+                                                    ui,
+                                                ) | ui_reflect(
+                                                    "Billboard",
+                                                    &mut re.render_billboard,
+                                                    &mut env,
+                                                    ui,
+                                                ) | ui_reflect(
+                                                    "Orient Along Velocity",
+                                                    &mut re.render_orient_along_velocity,
+                                                    &mut env,
+                                                    ui,
+                                                )
+                                            }))
                                         .changed;
                                     });
 
