@@ -569,11 +569,12 @@ fn ui_reflect<T: Reflect>(
     ir.response
 }
 
+// Maybe infinite period should be a separate checkbox.
 fn ui_spawner(spawner: &mut Spawner, ui: &mut egui::Ui) -> egui::Response {
     header!(ui, "Spawner", |ui| {
         value!("Particles", ui, spawner.num_particles, "#")
             | value!("Spawn Time", ui, spawner.spawn_time, "s")
-            | value!("Period", ui, spawner.period, "s")
+            | value!("Period", ui, spawner.period, "period")
             | ui.checkbox(&mut spawner.starts_active, "Starts Active")
             | ui.checkbox(&mut spawner.starts_immediately, "Starts Immediately")
     })
@@ -581,16 +582,18 @@ fn ui_spawner(spawner: &mut Spawner, ui: &mut egui::Ui) -> egui::Response {
 
 // Configure DragValue based on suffix for now.
 fn drag_value<'a>(v: &'a mut f32, suffix: &str) -> DragValue<'a> {
+    let fin = if v.is_finite() { "s" } else { "" };
     let dv = DragValue::new(v);
     match suffix {
         // Count.
         "#" => dv.clamp_range(0..=u32::MAX),
         // Seconds.
-        "s" => dv.speed(0.01).clamp_range(0.0..=f32::MAX),
+        "s" => dv.speed(0.01).clamp_range(0.0..=f32::MAX).suffix(suffix),
+        // Period (seconds).
+        "period" => dv.speed(0.01).clamp_range(0.0..=f32::INFINITY).suffix(fin),
         // ?
-        _ => dv.speed(0.1),
+        _ => dv.speed(0.1).suffix(suffix),
     }
-    .suffix(suffix)
 }
 
 // Values are all different units (time, distance, velocity, acceleration). It would be nice if we
@@ -639,7 +642,12 @@ fn ui_value(
                 if uniform.clicked() {
                     match value {
                         Value::Single(v) => {
-                            *value = Value::Uniform((*v, *v));
+                            *value = if v.is_finite() {
+                                Value::Uniform((*v, *v))
+                            } else {
+                                // FIX this crashes w/o error if the effect is visible
+                                Value::Uniform((0.0, 0.0))
+                            };
                             uniform.mark_changed();
                             return Some(uniform);
                         }
@@ -651,7 +659,14 @@ fn ui_value(
             })
             .merge()
             | match value {
-                Value::Single(ref mut v) => ui.add(drag_value(v, suffix)),
+                Value::Single(ref mut v) => {
+                    let mut dv = ui.add(drag_value(v, suffix));
+                    if suffix == "period" && dv.clicked_by(egui::PointerButton::Secondary) {
+                        dv.mark_changed();
+                        *v = f32::INFINITY;
+                    }
+                    dv
+                }
                 Value::Uniform(v) => {
                     ui.spacing_mut().item_spacing.x = 4.0; // default is 8.0?
                     ui.add(drag_value(&mut v.0, suffix).clamp_range(0.0..=v.1))
