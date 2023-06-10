@@ -571,7 +571,7 @@ fn ui_reflect<T: Reflect>(
 
 fn ui_spawner(spawner: &mut Spawner, ui: &mut egui::Ui) -> egui::Response {
     header!(ui, "Spawner", |ui| {
-        value!("Particles", ui, spawner.num_particles, "")
+        value!("Particles", ui, spawner.num_particles, "#")
             | value!("Spawn Time", ui, spawner.spawn_time, "s")
             | value!("Period", ui, spawner.period, "s")
             | ui.checkbox(&mut spawner.starts_active, "Starts Active")
@@ -579,8 +579,24 @@ fn ui_spawner(spawner: &mut Spawner, ui: &mut egui::Ui) -> egui::Response {
     })
 }
 
-// TODO hover descriptions
-// TODO left-click 0, right-click INF?
+// Configure DragValue based on suffix for now.
+fn drag_value<'a>(v: &'a mut f32, suffix: &str) -> DragValue<'a> {
+    let dv = DragValue::new(v);
+    match suffix {
+        // Count.
+        "#" => dv.clamp_range(0..=u32::MAX),
+        // Seconds.
+        "s" => dv.speed(0.01).clamp_range(0.0..=f32::MAX),
+        // ?
+        _ => dv.speed(0.1),
+    }
+    .suffix(suffix)
+}
+
+// Values are all different units (time, distance, velocity, acceleration). It would be nice if we
+// could tune the DragValues for each case (and suffix). Also, hover information from the doc
+// strings would be nice. Maybe this information could be encoded statically in the modifiers.
+// TODO infinity for period
 fn ui_value(
     id: egui::Id,
     value: &mut Value<f32>,
@@ -590,7 +606,8 @@ fn ui_value(
     // The horizontal is needed for when this is used within a reflect value. The reflect ui adds
     // some odd spacing.
     ui.horizontal(|ui| {
-        // The combo box label is on the right so we never use it, but we need the label for the unique id.
+        // The combo box label is on the right so we never use it, but we need the label for the
+        // unique id. (We could also use a label for units.)
         egui::ComboBox::from_id_source(id)
             .selected_text(match value {
                 Value::Single(_) => "Single",
@@ -634,16 +651,12 @@ fn ui_value(
             })
             .merge()
             | match value {
-                Value::Single(ref mut v) => ui.add(DragValue::new(v).suffix(suffix)),
+                Value::Single(ref mut v) => ui.add(drag_value(v, suffix)),
                 Value::Uniform(v) => {
                     ui.spacing_mut().item_spacing.x = 4.0; // default is 8.0?
-                    ui.add(DragValue::new(&mut v.0).clamp_range(0.0..=v.1))
+                    ui.add(drag_value(&mut v.0, suffix).clamp_range(0.0..=v.1))
                         | ui.label("-")
-                        | ui.add(
-                            DragValue::new(&mut v.1)
-                                .clamp_range(v.0..=f32::MAX)
-                                .suffix(suffix),
-                        )
+                        | ui.add(drag_value(&mut v.1, suffix).clamp_range(v.0..=f32::MAX))
                 }
                 _ => ui.colored_label(ui.visuals().error_fg_color, "unhandled value type"),
             }
