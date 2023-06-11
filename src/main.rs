@@ -1,4 +1,5 @@
 pub mod asset;
+mod gradient;
 pub mod reffect;
 
 use std::{any::Any, fs::File, io::Write, mem::discriminant};
@@ -14,12 +15,13 @@ use bevy::{
     tasks::IoTaskPool,
 };
 use bevy_egui::{
-    egui::{self, widgets::DragValue, CollapsingHeader},
+    egui::{self, widgets::DragValue, CollapsingHeader, Color32},
     EguiContexts, EguiPlugin,
 };
 use bevy_hanabi::prelude::*;
 
 use bevy_inspector_egui::{reflect_inspector::*, DefaultInspectorConfigPlugin};
+use gradient::color_gradient;
 use reffect::*;
 
 /// Collapsing header and body.
@@ -169,6 +171,7 @@ fn han_ed_ui(
         &mut LiveEffect,
     )>,
     type_registry: Res<AppTypeRegistry>,
+    mut keys: Local<Vec<(f32, Color32)>>,
 ) {
     // let mut ctx = world
     //     .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
@@ -179,6 +182,16 @@ fn han_ed_ui(
     let window = egui::Window::new("han-ed").vscroll(true);
     window.show(contexts.ctx_mut(), |ui| {
         //ui.ctx().set_debug_on_hover(true);
+
+        // Testing... remove me.
+        if keys.is_empty() {
+            *keys = vec![
+                (0.1, Color32::RED),
+                (0.5, Color32::BLUE),
+                (0.8, Color32::GREEN),
+            ];
+        }
+        color_gradient(&mut keys, ui);
 
         // show/hide, pause, slow time? reset
         // move entity w/ mouse?
