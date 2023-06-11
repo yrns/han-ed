@@ -51,37 +51,20 @@
         render_particle_texture: Path("plus.png"),
         render_set_color: None,
         render_color_over_lifetime: Some((
-            gradient: (
-                keys: [
-                    (
-                        ratio: 0.0,
-                        value: (
-                            x: 1.0,
-                            y: 1.0,
-                            z: 1.0,
-                            w: 1.0,
-                        ),
-                    ),
-                    (
-                        ratio: 0.5,
-                        value: (
-                            x: 1.0,
-                            y: 1.0,
-                            z: 1.0,
-                            w: 1.0,
-                        ),
-                    ),
-                    (
-                        ratio: 1.0,
-                        value: (
-                            x: 1.0,
-                            y: 1.0,
-                            z: 1.0,
-                            w: 0.0,
-                        ),
-                    ),
-                ],
-            ),
+            keys: [
+                (0.5, (
+                    x: 1.0,
+                    y: 1.0,
+                    z: 1.0,
+                    w: 1.0,
+                )),
+                (1.0, (
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                    w: 0.0,
+                )),
+            ],
         )),
         render_set_size: None,
         render_size_over_lifetime: Some((

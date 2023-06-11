@@ -15,13 +15,13 @@ use bevy::{
     tasks::IoTaskPool,
 };
 use bevy_egui::{
-    egui::{self, widgets::DragValue, CollapsingHeader, Color32},
+    egui::{self, widgets::DragValue, CollapsingHeader},
     EguiContexts, EguiPlugin,
 };
 use bevy_hanabi::prelude::*;
 
 use bevy_inspector_egui::{reflect_inspector::*, DefaultInspectorConfigPlugin};
-use gradient::color_gradient;
+use gradient::{color_gradient, ColorGradient};
 use reffect::*;
 
 /// Collapsing header and body.
@@ -98,6 +98,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .register_type::<InitVelocity>()
         .register_type::<Option<InitVelocity>>()
         .register_type::<UpdateAccel>()
+        .register_type::<ColorGradient>()
+        .register_type::<Option<ColorGradient>>()
         .register_type::<ParticleTexture>()
         .register_type::<Option<UpdateAccel>>()
         //.register_type::<REffect>() add_asset::<T> registers Handle<T>
@@ -171,7 +173,6 @@ fn han_ed_ui(
         &mut LiveEffect,
     )>,
     type_registry: Res<AppTypeRegistry>,
-    mut keys: Local<Vec<(f32, Color32)>>,
 ) {
     // let mut ctx = world
     //     .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
@@ -182,16 +183,6 @@ fn han_ed_ui(
     let window = egui::Window::new("han-ed").vscroll(true);
     window.show(contexts.ctx_mut(), |ui| {
         //ui.ctx().set_debug_on_hover(true);
-
-        // Testing... remove me.
-        if keys.is_empty() {
-            *keys = vec![
-                (0.1, Color32::RED),
-                (0.5, Color32::BLUE),
-                (0.8, Color32::GREEN),
-            ];
-        }
-        color_gradient(&mut keys, ui);
 
         // show/hide, pause, slow time? reset
         // move entity w/ mouse?
@@ -425,11 +416,11 @@ fn han_ed_ui(
                                                     &mut re.render_set_color,
                                                     &mut env,
                                                     ui,
-                                                ) | ui_reflect(
+                                                ) | ui_option(
                                                     "Color Over Lifetime",
                                                     &mut re.render_color_over_lifetime,
-                                                    &mut env,
                                                     ui,
+                                                    |g, ui| color_gradient(g, ui),
                                                 ) | ui_reflect(
                                                     "Set Size",
                                                     &mut re.render_set_size,
@@ -606,30 +597,24 @@ fn ui_particle_texture(
 }
 
 #[allow(unused)]
-fn ui_option<T: Default, F: FnOnce(&T, &mut egui::Ui) -> Option<T>>(
+fn ui_option<T: Default>(
     label: &str,
     data: &mut Option<T>,
     ui: &mut egui::Ui,
-    f: F,
-) -> bool {
+    f: impl FnOnce(&mut T, &mut egui::Ui) -> egui::Response,
+) -> egui::Response {
     ui.horizontal(|ui| {
         //ui.label(label);
         let mut opt = data.is_some();
-        if ui.checkbox(&mut opt, label).clicked() {
+        let mut response = ui.checkbox(&mut opt, label);
+        if response.clicked() {
             *data = if opt { Some(T::default()) } else { None };
-        }
+            response.mark_changed();
+        };
 
         match data {
-            Some(v) => {
-                if let Some(new_data) = f(v, ui) {
-                    *data = Some(new_data);
-                    true
-                } else {
-                    false
-                }
-            }
-            // Draw inactive?
-            None => false,
+            Some(v) => response | f(v, ui),
+            None => response,
         }
     })
     .inner

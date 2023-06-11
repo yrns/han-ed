@@ -1,15 +1,40 @@
 use std::cmp::Ordering;
 
+use bevy::{
+    prelude::Vec4,
+    reflect::{FromReflect, Reflect},
+};
 use bevy_egui::egui::{widgets::color_picker::*, *};
+use bevy_hanabi::{ColorOverLifetimeModifier, Gradient};
 
-// pub struct ColorGradient {
-//     keys: &mut Vec<(f32, Color32)>,
-// }
+#[derive(Clone, Reflect, FromReflect)]
+pub struct ColorGradient {
+    keys: Vec<(f32, Vec4)>,
+}
+
+impl Default for ColorGradient {
+    fn default() -> Self {
+        Self {
+            keys: vec![(0.5, Vec4::splat(1.0))],
+        }
+    }
+}
+
+impl ColorGradient {
+    // The starting color is the first key (if non-zero) or the last zero-value key.
+    fn initial_color(&self) -> Color32 {
+        if self.keys[0].0 > 0.0 {
+            rgba(&self.keys[0].1).into()
+        } else if let Some((_k, color)) = self.keys.iter().take_while(|k| k.0 == 0.0).last() {
+            rgba(color).into()
+        } else {
+            Color32::TEMPORARY_COLOR
+        }
+    }
+}
 
 // This assumes keys are sorted and there's at least one.
-pub fn color_gradient(keys: &mut Vec<(f32, Color32)>, ui: &mut Ui) -> Response {
-    assert!(keys.len() > 0);
-
+pub fn color_gradient(gradient: &mut ColorGradient, ui: &mut Ui) -> Response {
     let desired_size = vec2(ui.spacing().slider_width, ui.spacing().interact_size.y);
     let (rect, response) = ui.allocate_at_least(desired_size, Sense::hover());
 
@@ -17,11 +42,18 @@ pub fn color_gradient(keys: &mut Vec<(f32, Color32)>, ui: &mut Ui) -> Response {
         let visuals = ui.style().interact(&response);
         let w = rect.width();
 
-        let mut mesh = start_strip(rect, initial_color(keys));
+        let mut mesh = start_strip(rect, gradient.initial_color());
+
+        let keys = &mut gradient.keys;
+        assert!(keys.len() > 0);
 
         let mut last_k = 0.0;
         for (key, color) in keys.iter_mut().skip_while(|(k, _)| *k == 0.0) {
-            add_segment(&mut mesh, (key.min(1.0) - last_k) * w, Some(*color));
+            add_segment(
+                &mut mesh,
+                (key.min(1.0) - last_k) * w,
+                Some(rgba(color).into()),
+            );
             last_k = *key;
         }
         if last_k < 1.0 {
@@ -46,7 +78,7 @@ pub fn color_gradient(keys: &mut Vec<(f32, Color32)>, ui: &mut Ui) -> Response {
             ui.painter().add(epaint::CircleShape {
                 center: re.rect.center(),
                 radius: re.rect.size().x / 2.0,
-                fill: *color,
+                fill: rgba(color).into(),
                 stroke: visuals.fg_stroke,
             });
             if re.clicked_by(PointerButton::Secondary) {
@@ -73,26 +105,33 @@ pub fn color_gradient(keys: &mut Vec<(f32, Color32)>, ui: &mut Ui) -> Response {
             ui.spacing_mut().interact_size = Vec2::splat(12.0);
 
             for (_key, color) in keys.iter_mut() {
-                color_edit_button_srgba(ui, color, Alpha::Opaque);
+                let mut color32 = rgba(color).into();
+                if color_edit_button_srgba(ui, &mut color32, Alpha::Opaque).changed() {
+                    *color = Vec4::from_slice(&Rgba::from(color32).to_array());
+                }
             }
 
             if ui.small_button("+").clicked() {
-                keys.push((1.0, Color32::TEMPORARY_COLOR));
+                keys.push((1.0, Vec4::ZERO));
             }
         });
     }
     response
 }
 
-// The starting color is the first key (if non-zero) or the last zero-value key.
-fn initial_color(keys: &Vec<(f32, Color32)>) -> Color32 {
-    if keys[0].0 > 0.0 {
-        keys[0].1
-    } else if let Some((_k, color)) = keys.iter().take_while(|k| k.0 == 0.0).last() {
-        *color
-    } else {
-        Color32::TEMPORARY_COLOR
+impl From<ColorGradient> for ColorOverLifetimeModifier {
+    fn from(keys: ColorGradient) -> Self {
+        let mut gradient = Gradient::new();
+        for (key, color) in keys.keys {
+            gradient.add_key(key, color);
+        }
+
+        ColorOverLifetimeModifier { gradient }
     }
+}
+
+fn rgba(c: &Vec4) -> Rgba {
+    Rgba::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
 }
 
 // Start a strip with two vertices.

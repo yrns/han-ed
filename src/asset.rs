@@ -9,6 +9,7 @@ use bevy::{
     utils::BoxedFuture,
 };
 
+use crate::gradient::ColorGradient;
 use crate::reffect::REffect;
 use crate::*;
 
@@ -145,7 +146,7 @@ pub fn spawn_circle(
             lifetime: 5_f32.into(),
         }),
         render_particle_texture: asset_server.load("plus.png").into(),
-        render_color_over_lifetime: Some(ColorOverLifetimeModifier { gradient }),
+        render_color_over_lifetime: Some(ColorGradient::default()),
         render_size_over_lifetime: Some(SizeOverLifetimeModifier {
             gradient: Gradient::constant([0.2; 2].into()),
         }),

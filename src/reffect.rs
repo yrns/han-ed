@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use bevy::{prelude::*, reflect::TypeUuid};
 //use bevy::reflect::*;
+use crate::gradient::ColorGradient;
 use bevy_hanabi::prelude::*;
 
 // This is all to get around the fact that EffectAsset cannot be serialized.
@@ -23,6 +24,7 @@ pub struct REffect {
     pub init_velocity: Option<InitVelocity>,
     pub init_size: Option<InitSizeModifier>,
     pub init_age: Option<InitAgeModifier>,
+    // So this is required unless lifetime is a property? Remove the Option?
     pub init_lifetime: Option<InitLifetimeModifier>,
 
     // UpdateModifiers(s)
@@ -34,7 +36,7 @@ pub struct REffect {
     // RenderModifier(s)
     pub render_particle_texture: ParticleTexture,
     pub render_set_color: Option<SetColorModifier>,
-    pub render_color_over_lifetime: Option<ColorOverLifetimeModifier>,
+    pub render_color_over_lifetime: Option<ColorGradient>,
     pub render_set_size: Option<SetSizeModifier>,
     pub render_size_over_lifetime: Option<SizeOverLifetimeModifier>,
     pub render_billboard: Option<BillboardModifier>,
@@ -199,7 +201,7 @@ impl REffect {
             effect = effect.render(m.clone());
         }
         if let Some(m) = self.render_color_over_lifetime.as_ref() {
-            effect = effect.render(m.clone());
+            effect = effect.render(ColorOverLifetimeModifier::from(m.clone()))
         }
         if let Some(m) = self.render_set_size.as_ref() {
             effect = effect.render(m.clone());
