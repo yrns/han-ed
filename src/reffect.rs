@@ -39,7 +39,7 @@ pub struct REffect {
     pub render_color_over_lifetime: Option<ColorGradient>,
     pub render_set_size: Option<SetSizeModifier>,
     pub render_size_over_lifetime: Option<SizeOverLifetimeModifier>,
-    pub render_billboard: Option<BillboardModifier>,
+    pub render_billboard: bool,
     pub render_orient_along_velocity: Option<OrientAlongVelocityModifier>,
 }
 
@@ -209,8 +209,8 @@ impl REffect {
         if let Some(m) = self.render_size_over_lifetime.as_ref() {
             effect = effect.render(m.clone());
         }
-        if let Some(m) = self.render_billboard.as_ref() {
-            effect = effect.render(m.clone());
+        if self.render_billboard {
+            effect = effect.render(BillboardModifier);
         }
         if let Some(m) = self.render_orient_along_velocity.as_ref() {
             effect = effect.render(m.clone());

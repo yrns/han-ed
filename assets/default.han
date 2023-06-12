@@ -80,7 +80,7 @@
                 ],
             ),
         )),
-        render_billboard: None,
+        render_billboard: false,
         render_orient_along_velocity: None,
     ),
 }

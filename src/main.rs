@@ -201,6 +201,14 @@ fn han_ed_ui(
                             .speed(0.01),
                     );
                 });
+
+                // TODO add more tooltips
+                let mut show_tooltips = ui.ctx().style().explanation_tooltips;
+                if ui.checkbox(&mut show_tooltips, "Show tooltips").changed() {
+                    let mut style = (*ui.ctx().style()).clone();
+                    style.explanation_tooltips = show_tooltips;
+                    ui.ctx().set_style(style);
+                }
             });
 
         // We want to keep this around so that we can package these live effects into a scene later?
@@ -433,17 +441,14 @@ fn han_ed_ui(
                                                     &mut re.render_size_over_lifetime,
                                                     &mut env,
                                                     ui,
-                                                ) | ui_reflect(
-                                                    "Billboard",
-                                                    &mut re.render_billboard,
-                                                    &mut env,
-                                                    ui,
-                                                ) | ui_reflect(
-                                                    "Orient Along Velocity",
-                                                    &mut re.render_orient_along_velocity,
-                                                    &mut env,
-                                                    ui,
-                                                )
+                                                ) | ui
+                                                    .checkbox(&mut re.render_billboard, "Billboard")
+                                                    | ui_reflect(
+                                                        "Orient Along Velocity",
+                                                        &mut re.render_orient_along_velocity,
+                                                        &mut env,
+                                                        ui,
+                                                    )
                                             }))
                                         .changed;
                                     });
