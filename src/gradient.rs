@@ -4,7 +4,7 @@ use bevy::{
     prelude::Vec4,
     reflect::{FromReflect, Reflect},
 };
-use bevy_egui::egui::{widgets::color_picker::*, *};
+use bevy_egui::egui::{epaint::Hsva, widgets::color_picker::*, *};
 use bevy_hanabi::{ColorOverLifetimeModifier, Gradient};
 
 #[derive(Clone, Reflect, FromReflect)]
@@ -33,11 +33,11 @@ impl ColorGradient {
     }
 }
 
-// This assumes keys are sorted and there's at least one.
 pub fn color_gradient(gradient: &mut ColorGradient, ui: &mut Ui) -> Response {
     color_gradient_picker(gradient, ui) | color_pickers(gradient, ui)
 }
 
+// This assumes keys are sorted and there's at least one.
 pub fn color_gradient_picker(gradient: &mut ColorGradient, ui: &mut Ui) -> Response {
     let desired_size = vec2(ui.spacing().slider_width, ui.spacing().interact_size.y);
     let (rect, mut response) = ui.allocate_at_least(desired_size, Sense::hover());
@@ -73,6 +73,8 @@ pub fn color_gradient_picker(gradient: &mut ColorGradient, ui: &mut Ui) -> Respo
             .scope(|ui| {
                 let mut sort = false;
                 let mut changed = false;
+                let count = keys.len();
+
                 for i in 0..keys.len() {
                     let (key, color) = &mut keys[i];
                     let re = ui.allocate_rect(
@@ -89,12 +91,16 @@ pub fn color_gradient_picker(gradient: &mut ColorGradient, ui: &mut Ui) -> Respo
                         fill: rgba(color).into(),
                         stroke: visuals.fg_stroke,
                     });
-                    if re.clicked_by(PointerButton::Secondary) {
+
+                    // You need at least one key.
+                    if count > 1 && re.clicked_by(PointerButton::Secondary) {
                         // Delete the key.
                         keys.remove(i);
                         changed = true;
                         break;
-                    } else if re.dragged() {
+                    }
+
+                    if re.dragged() {
                         // In this one particular case we don't register the change until release, I
                         // suppose because you can see the color already.
                         if let Some(p) = ui.ctx().pointer_interact_pos() {
@@ -122,6 +128,10 @@ pub fn color_gradient_picker(gradient: &mut ColorGradient, ui: &mut Ui) -> Respo
     response
 }
 
+// The color picker from egui is natively HSVA. So there's a lot of unnecessary conversion and
+// weirdness happening. We are getting spammed with changes even when the color is not changing,
+// which I presume has something to do with the conversion to HSVA. Which is why egui caches them?
+// We may have to write our own color picker just for RGBA.
 fn color_pickers(gradient: &mut ColorGradient, ui: &mut Ui) -> Response {
     let keys = &mut gradient.keys;
 
@@ -133,9 +143,9 @@ fn color_pickers(gradient: &mut ColorGradient, ui: &mut Ui) -> Response {
             ui.spacing_mut().interact_size = Vec2::splat(12.0);
 
             for (_key, color) in keys.iter_mut() {
-                let mut color32 = rgba(color).into();
-                if color_edit_button_srgba(ui, &mut color32, Alpha::Opaque).changed() {
-                    *color = Vec4::from_slice(&Rgba::from(color32).to_array());
+                let mut hsva = hsva(color);
+                if color_edit_button_hsva(ui, &mut hsva, Alpha::OnlyBlend).changed() {
+                    *color = Vec4::from_slice(&hsva.to_rgba_premultiplied());
                     changed = true;
                 }
             }
@@ -164,8 +174,13 @@ impl From<ColorGradient> for ColorOverLifetimeModifier {
     }
 }
 
+// This is still the fastest way to Color32?
 fn rgba(c: &Vec4) -> Rgba {
-    Rgba::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
+    Rgba::from_rgba_premultiplied(c[0], c[1], c[2], c[3])
+}
+
+fn hsva(c: &Vec4) -> Hsva {
+    Hsva::from_rgba_premultiplied(c[0], c[1], c[2], c[3])
 }
 
 // Start a strip with two vertices.
