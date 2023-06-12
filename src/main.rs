@@ -100,6 +100,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .register_type::<UpdateAccel>()
         .register_type::<ColorGradient>()
         .register_type::<Option<ColorGradient>>()
+        .register_type::<Vec<(f32, Vec4)>>()
+        .register_type::<(f32, Vec4)>()
         .register_type::<ParticleTexture>()
         .register_type::<Option<UpdateAccel>>()
         //.register_type::<REffect>() add_asset::<T> registers Handle<T>
