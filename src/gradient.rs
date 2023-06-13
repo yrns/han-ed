@@ -1,11 +1,11 @@
 use std::cmp::Ordering;
 
 use bevy::{
-    prelude::Vec4,
+    prelude::{Vec2, Vec4},
     reflect::{FromReflect, Reflect},
 };
-use bevy_egui::egui::{epaint::Hsva, widgets::color_picker::*, *};
-use bevy_hanabi::{ColorOverLifetimeModifier, Gradient};
+use bevy_egui::egui::{self, epaint::Hsva, widgets::color_picker::*, *};
+use bevy_hanabi::{ColorOverLifetimeModifier, SizeOverLifetimeModifier};
 
 #[derive(Clone, Reflect, FromReflect)]
 pub struct ColorGradient {
@@ -18,6 +18,113 @@ impl Default for ColorGradient {
             keys: vec![(0.5, Vec4::splat(1.0))],
         }
     }
+}
+
+#[derive(Clone, Reflect, FromReflect)]
+pub struct SizeGradient {
+    keys: Vec<(f32, Vec2)>,
+}
+
+impl Default for SizeGradient {
+    fn default() -> Self {
+        Self {
+            keys: vec![(0.5, Vec2::splat(1.0))],
+        }
+    }
+}
+
+trait IntoColor {
+    fn into_color(&self) -> Color32;
+}
+
+impl IntoColor for Vec4 {
+    fn into_color(&self) -> Color32 {
+        rgba(self).into()
+    }
+}
+
+impl IntoColor for Vec2 {
+    fn into_color(&self) -> Color32 {
+        Color32::GRAY
+    }
+}
+
+fn initial_value<T>(keys: &Vec<(f32, T)>) -> Option<&T> {
+    if keys[0].0 > 0.0 {
+        Some(&keys[0].1)
+    } else if let Some((_k, v)) = keys.iter().take_while(|k| k.0 == 0.0).last() {
+        Some(v)
+    } else {
+        None
+    }
+}
+
+/// Add draggable keys.
+fn show_keys(keys: &mut Vec<(f32, impl IntoColor)>, rect: Rect, ui: &mut Ui) -> bool {
+    let mut sort = false;
+    let mut changed = false;
+    let count = keys.len();
+
+    // The scope is to paper over the layered space allocations. Following widgets will get
+    // placed after the last (inset) allocation without it.
+    ui.scope(|ui| {
+        for i in 0..count {
+            let (key, value) = &mut keys[i];
+            let fill = value.into_color();
+
+            let re = ui.allocate_rect(
+                Rect::from_center_size(
+                    pos2(lerp(rect.x_range(), *key), rect.center().y),
+                    egui::Vec2::splat(rect.height() / 2.0),
+                ),
+                Sense::click_and_drag(),
+            );
+            let visuals = ui.style().interact(&re);
+            ui.painter().add(epaint::CircleShape {
+                center: re.rect.center(),
+                radius: re.rect.size().x / 2.0,
+                fill,
+                stroke: visuals.fg_stroke,
+            });
+
+            // You need at least one key.
+            if count > 1 && re.clicked_by(PointerButton::Secondary) {
+                // Delete the key.
+                keys.remove(i);
+                changed = true;
+                break;
+            }
+
+            if re.dragged() {
+                // In this one particular case we don't register the change until release, I
+                // suppose because you can see the color already.
+                if let Some(p) = ui.ctx().pointer_interact_pos() {
+                    let x = (p - rect.min).x / rect.width();
+                    *key = x.clamp(0.0, 1.0);
+                }
+            } else if re.drag_released() {
+                // Don't sort until the drag is released otherwise it starts
+                // flickering. Probably because the ids get swapped?
+                sort = true;
+            }
+        }
+    });
+
+    if sort {
+        keys.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+    }
+    sort || changed
+}
+
+pub trait Gradient {
+    type Value;
+
+    fn show(&mut self, ui: &mut Ui) -> Response {
+        self.show_gradient(ui) | self.show_values(ui)
+    }
+
+    fn show_gradient(&mut self, ui: &mut Ui) -> Response;
+    fn show_values(&mut self, ui: &mut Ui) -> Response;
 }
 
 impl ColorGradient {
@@ -33,144 +140,195 @@ impl ColorGradient {
     }
 }
 
-pub fn color_gradient(gradient: &mut ColorGradient, ui: &mut Ui) -> Response {
-    color_gradient_picker(gradient, ui) | color_pickers(gradient, ui)
-}
+impl Gradient for ColorGradient {
+    type Value = Vec4;
 
-// This assumes keys are sorted and there's at least one.
-pub fn color_gradient_picker(gradient: &mut ColorGradient, ui: &mut Ui) -> Response {
-    let desired_size = vec2(ui.spacing().slider_width, ui.spacing().interact_size.y);
-    let (rect, mut response) = ui.allocate_at_least(desired_size, Sense::hover());
+    fn show_gradient(&mut self, ui: &mut Ui) -> Response {
+        let desired_size = vec2(ui.spacing().slider_width, ui.spacing().interact_size.y);
+        let (rect, mut response) = ui.allocate_at_least(desired_size, Sense::hover());
 
-    if ui.is_rect_visible(rect) {
-        let visuals = ui.style().interact(&response);
-        let w = rect.width();
+        if ui.is_rect_visible(rect) {
+            let w = rect.width();
 
-        let mut mesh = start_strip(rect, gradient.initial_color());
+            let mut mesh = start_strip(rect, self.initial_color());
 
-        let keys = &mut gradient.keys;
-        assert!(keys.len() > 0);
+            let keys = &mut self.keys;
+            assert!(keys.len() > 0);
 
-        let mut last_k = 0.0;
-        for (key, color) in keys.iter_mut().skip_while(|(k, _)| *k == 0.0) {
-            add_segment(
-                &mut mesh,
-                (key.min(1.0) - last_k) * w,
-                Some(rgba(color).into()),
-            );
-            last_k = *key;
+            let mut last_k = 0.0;
+            for (key, color) in keys.iter_mut().skip_while(|(k, _)| *k == 0.0) {
+                add_segment(
+                    &mut mesh,
+                    (key.min(1.0) - last_k) * w,
+                    Some(rgba(color).into()),
+                );
+                last_k = *key;
+            }
+            if last_k < 1.0 {
+                add_segment(&mut mesh, (1.0 - last_k) * w, None);
+            }
+
+            ui.painter().add(Shape::mesh(mesh));
+
+            let visuals = ui.style().interact(&response);
+            ui.painter().rect_stroke(rect, 0.0, visuals.bg_stroke);
+
+            // if ui.scope(|ui| self.show_keys(ui)).inner {
+            //     response.mark_changed();
+            // }
+            if show_keys(&mut self.keys, rect, ui) {
+                response.mark_changed();
+            }
         }
-        if last_k < 1.0 {
-            add_segment(&mut mesh, (1.0 - last_k) * w, None);
-        }
-
-        ui.painter().add(Shape::mesh(mesh));
-        ui.painter().rect_stroke(rect, 0.0, visuals.bg_stroke);
-
-        // Add draggable keys. The scope is to paper over the layered space allocations. Following
-        // widgets will get placed after the last (inset) allocation without it.
-        if ui
-            .scope(|ui| {
-                let mut sort = false;
-                let mut changed = false;
-                let count = keys.len();
-
-                for i in 0..keys.len() {
-                    let (key, color) = &mut keys[i];
-                    let re = ui.allocate_rect(
-                        Rect::from_center_size(
-                            pos2(lerp(rect.x_range(), *key), rect.center().y),
-                            Vec2::splat(rect.height() / 2.0),
-                        ),
-                        Sense::click_and_drag(),
-                    );
-                    let visuals = ui.style().interact(&re);
-                    ui.painter().add(epaint::CircleShape {
-                        center: re.rect.center(),
-                        radius: re.rect.size().x / 2.0,
-                        fill: rgba(color).into(),
-                        stroke: visuals.fg_stroke,
-                    });
-
-                    // You need at least one key.
-                    if count > 1 && re.clicked_by(PointerButton::Secondary) {
-                        // Delete the key.
-                        keys.remove(i);
-                        changed = true;
-                        break;
-                    }
-
-                    if re.dragged() {
-                        // In this one particular case we don't register the change until release, I
-                        // suppose because you can see the color already.
-                        if let Some(p) = ui.ctx().pointer_interact_pos() {
-                            let x = (p - rect.min).x / rect.width();
-                            *key = x.clamp(0.0, 1.0);
-                        }
-                    } else if re.drag_released() {
-                        // Don't sort until the drag is released otherwise it starts
-                        // flickering. Probably because the ids get swapped?
-                        sort = true;
-                    }
-                }
-
-                if sort {
-                    keys.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
-                }
-                sort || changed
-            })
-            .inner
-        {
-            response.mark_changed();
-        }
+        response
     }
 
-    response
-}
+    // The color picker from egui is natively HSVA. So there's a lot of unnecessary conversion and
+    // weirdness happening. We are getting spammed with changes even when the color is not changing,
+    // which I presume has something to do with the conversion to HSVA. Which is why egui caches them?
+    // We may have to write our own color picker just for RGBA.
+    fn show_values(&mut self, ui: &mut Ui) -> Response {
+        let keys = &mut self.keys;
 
-// The color picker from egui is natively HSVA. So there's a lot of unnecessary conversion and
-// weirdness happening. We are getting spammed with changes even when the color is not changing,
-// which I presume has something to do with the conversion to HSVA. Which is why egui caches them?
-// We may have to write our own color picker just for RGBA.
-fn color_pickers(gradient: &mut ColorGradient, ui: &mut Ui) -> Response {
-    let keys = &mut gradient.keys;
+        let mut changed = false;
 
-    let mut changed = false;
+        let mut response = ui
+            .horizontal(|ui| {
+                // Make the buttons smaller.
+                ui.spacing_mut().interact_size = egui::Vec2::splat(12.0);
 
-    let mut response = ui
-        .horizontal(|ui| {
-            // Make the buttons smaller.
-            ui.spacing_mut().interact_size = Vec2::splat(12.0);
+                for (_key, color) in keys.iter_mut() {
+                    let mut hsva = hsva(color);
+                    if color_edit_button_hsva(ui, &mut hsva, Alpha::OnlyBlend).changed() {
+                        *color = Vec4::from_slice(&hsva.to_rgba_premultiplied());
+                        // TODO only set changed when the popup is closed
+                        changed = true;
+                    }
+                }
 
-            for (_key, color) in keys.iter_mut() {
-                let mut hsva = hsva(color);
-                if color_edit_button_hsva(ui, &mut hsva, Alpha::OnlyBlend).changed() {
-                    *color = Vec4::from_slice(&hsva.to_rgba_premultiplied());
+                if ui.small_button("+").clicked() {
+                    keys.push((1.0, Vec4::ZERO));
                     changed = true;
                 }
+            })
+            .response;
+
+        if changed {
+            response.mark_changed();
+        }
+
+        response
+    }
+}
+
+impl Gradient for SizeGradient {
+    type Value = Vec2;
+
+    fn show_gradient(&mut self, ui: &mut Ui) -> Response {
+        assert!(self.keys.len() > 0);
+
+        let desired_size = vec2(ui.spacing().slider_width, ui.spacing().interact_size.y);
+        let (rect, mut response) = ui.allocate_at_least(desired_size, Sense::hover());
+        let visuals = ui.style().interact(&response);
+
+        if ui.is_rect_visible(rect) {
+            let w = rect.width();
+
+            let stroke_x = Stroke::new(visuals.fg_stroke.width, Color32::RED);
+            let stroke_y = Stroke::new(visuals.fg_stroke.width, Color32::GREEN);
+
+            let initial = initial_value(&self.keys).map(|v| {
+                (
+                    pos2(rect.min.x, rect.max.y - v.x),
+                    pos2(rect.min.x, rect.max.y - v.y),
+                )
+            });
+
+            let (mut line_x, mut line_y): (Vec<_>, Vec<_>) = self
+                .keys
+                .iter()
+                .map(|(k, v)| {
+                    let x = rect.min.x + k * w;
+                    (pos2(x, rect.max.y - v.x), pos2(x, rect.max.y - v.y))
+                })
+                .unzip();
+
+            if let Some((x, y)) = initial {
+                line_x.insert(0, x);
+                line_y.insert(0, y);
             }
 
-            if ui.small_button("+").clicked() {
-                keys.push((1.0, Vec4::ZERO));
+            if let Some((k, v)) = self.keys.last() {
+                if *k < 1.0 {
+                    line_x.push(pos2(rect.max.x, rect.max.y - v.x));
+                    line_y.push(pos2(rect.max.x, rect.max.y - v.y));
+                }
             }
-        })
-        .response;
 
-    if changed {
-        response.mark_changed();
+            ui.painter().add(Shape::line(line_x, stroke_x));
+            ui.painter().add(Shape::line(line_y, stroke_y));
+
+            ui.painter().rect_stroke(rect, 0.0, visuals.bg_stroke);
+
+            if show_keys(&mut self.keys, rect, ui) {
+                response.mark_changed();
+            }
+        }
+        response
     }
 
-    response
+    fn show_values(&mut self, ui: &mut Ui) -> Response {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().interact_size = egui::Vec2::splat(4.0);
+
+            let mut response = self
+                .keys
+                .iter_mut()
+                .map(|(_key, value)| {
+                    ui.add(
+                        egui::DragValue::new(&mut value[0])
+                            .prefix("x: ")
+                            .speed(0.01)
+                            .clamp_range(0.0..=f32::MAX),
+                    ) | ui.add(
+                        egui::DragValue::new(&mut value[1])
+                            .prefix("y: ")
+                            .speed(0.01)
+                            .clamp_range(0.0..=f32::MAX),
+                    )
+                })
+                .reduce(|a, b| a | b)
+                .expect("at least one key");
+
+            if ui.small_button("+").clicked() {
+                self.keys.push((1.0, Vec2::ZERO));
+                response.mark_changed();
+            }
+            response
+        })
+        .inner
+    }
 }
 
 impl From<ColorGradient> for ColorOverLifetimeModifier {
-    fn from(keys: ColorGradient) -> Self {
-        let mut gradient = Gradient::new();
-        for (key, color) in keys.keys {
+    fn from(g: ColorGradient) -> Self {
+        let mut gradient = bevy_hanabi::Gradient::new();
+        for (key, color) in g.keys {
             gradient.add_key(key, color);
         }
 
         ColorOverLifetimeModifier { gradient }
+    }
+}
+
+impl From<SizeGradient> for SizeOverLifetimeModifier {
+    fn from(g: SizeGradient) -> Self {
+        let mut gradient = bevy_hanabi::Gradient::new();
+        for (key, size) in g.keys {
+            gradient.add_key(key, size);
+        }
+
+        SizeOverLifetimeModifier { gradient }
     }
 }
 

@@ -8,10 +8,9 @@ use bevy::{
     reflect::{serde::UntypedReflectDeserializer, TypeRegistryArc},
     utils::BoxedFuture,
 };
+use bevy_hanabi::EffectAsset;
 
-use crate::gradient::ColorGradient;
-use crate::reffect::REffect;
-use crate::*;
+use crate::{gradient::*, reffect::*, LiveEffect};
 
 // This is basically a dupe of SceneLoader.
 pub struct HanLoader {
@@ -121,7 +120,9 @@ pub fn spawn_circle(
     mut effects: ResMut<Assets<EffectAsset>>,
     mut reffects: ResMut<Assets<REffect>>,
 ) {
-    let mut gradient = Gradient::new();
+    use bevy_hanabi::*;
+
+    let mut gradient = bevy_hanabi::Gradient::new();
     gradient.add_key(0.0, Vec4::splat(1.0));
     gradient.add_key(0.5, Vec4::splat(1.0));
     gradient.add_key(1.0, Vec4::new(1.0, 1.0, 1.0, 0.0));
@@ -147,9 +148,6 @@ pub fn spawn_circle(
         }),
         render_particle_texture: asset_server.load("plus.png").into(),
         render_color_over_lifetime: Some(ColorGradient::default()),
-        render_size_over_lifetime: Some(SizeOverLifetimeModifier {
-            gradient: Gradient::constant([0.2; 2].into()),
-        }),
         ..default()
     };
 

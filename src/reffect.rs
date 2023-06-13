@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use bevy::{prelude::*, reflect::TypeUuid};
 //use bevy::reflect::*;
-use crate::gradient::ColorGradient;
+use crate::gradient::{ColorGradient, SizeGradient};
 use bevy_hanabi::prelude::*;
 
 // This is all to get around the fact that EffectAsset cannot be serialized.
@@ -38,7 +38,7 @@ pub struct REffect {
     pub render_set_color: Option<SetColorModifier>,
     pub render_color_over_lifetime: Option<ColorGradient>,
     pub render_set_size: Option<SetSizeModifier>,
-    pub render_size_over_lifetime: Option<SizeOverLifetimeModifier>,
+    pub render_size_over_lifetime: Option<SizeGradient>,
     pub render_billboard: bool,
     pub render_orient_along_velocity: Option<OrientAlongVelocityModifier>,
 }
@@ -207,7 +207,7 @@ impl REffect {
             effect = effect.render(m.clone());
         }
         if let Some(m) = self.render_size_over_lifetime.as_ref() {
-            effect = effect.render(m.clone());
+            effect = effect.render(SizeOverLifetimeModifier::from(m.clone()));
         }
         if self.render_billboard {
             effect = effect.render(BillboardModifier);

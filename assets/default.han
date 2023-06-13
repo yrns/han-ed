@@ -68,17 +68,12 @@
         )),
         render_set_size: None,
         render_size_over_lifetime: Some((
-            gradient: (
-                keys: [
-                    (
-                        ratio: 0.0,
-                        value: (
-                            x: 0.2,
-                            y: 0.2,
-                        ),
-                    ),
-                ],
-            ),
+            keys: [
+                (0.0, (
+                    x: 0.2,
+                    y: 0.2,
+                )),
+            ],
         )),
         render_billboard: false,
         render_orient_along_velocity: None,

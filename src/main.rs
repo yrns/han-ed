@@ -21,7 +21,7 @@ use bevy_egui::{
 use bevy_hanabi::prelude::*;
 
 use bevy_inspector_egui::{reflect_inspector::*, DefaultInspectorConfigPlugin};
-use gradient::{color_gradient, ColorGradient};
+use gradient::{ColorGradient, Gradient, SizeGradient};
 use reffect::*;
 
 /// Collapsing header and body.
@@ -102,6 +102,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .register_type::<Option<ColorGradient>>()
         .register_type::<Vec<(f32, Vec4)>>()
         .register_type::<(f32, Vec4)>()
+        .register_type::<SizeGradient>()
+        .register_type::<Option<SizeGradient>>()
+        .register_type::<Vec<(f32, Vec2)>>()
+        .register_type::<(f32, Vec2)>()
         .register_type::<ParticleTexture>()
         .register_type::<Option<UpdateAccel>>()
         //.register_type::<REffect>() add_asset::<T> registers Handle<T>
@@ -184,8 +188,6 @@ fn han_ed_ui(
 
     let window = egui::Window::new("han-ed").vscroll(true);
     window.show(contexts.ctx_mut(), |ui| {
-        //ui.ctx().set_debug_on_hover(true);
-
         // show/hide, pause, slow time? reset
         // move entity w/ mouse?
         CollapsingHeader::new("Global")
@@ -208,6 +210,11 @@ fn han_ed_ui(
                     let mut style = (*ui.ctx().style()).clone();
                     style.explanation_tooltips = show_tooltips;
                     ui.ctx().set_style(style);
+                }
+
+                let mut debug = ui.ctx().debug_on_hover();
+                if ui.checkbox(&mut debug, "Debug").changed() {
+                    ui.ctx().set_debug_on_hover(debug);
                 }
             });
 
@@ -430,17 +437,17 @@ fn han_ed_ui(
                                                     "Color Over Lifetime",
                                                     &mut re.render_color_over_lifetime,
                                                     ui,
-                                                    |g, ui| color_gradient(g, ui),
+                                                    |g, ui| g.show(ui),
                                                 ) | ui_reflect(
                                                     "Set Size",
                                                     &mut re.render_set_size,
                                                     &mut env,
                                                     ui,
-                                                ) | ui_reflect(
+                                                ) | ui_option(
                                                     "Size Over Lifetime",
                                                     &mut re.render_size_over_lifetime,
-                                                    &mut env,
                                                     ui,
+                                                    |g, ui| g.show(ui),
                                                 ) | ui
                                                     .checkbox(&mut re.render_billboard, "Billboard")
                                                     | ui_reflect(
