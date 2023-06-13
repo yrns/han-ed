@@ -237,19 +237,18 @@ impl Gradient for SizeGradient {
             let stroke_x = Stroke::new(visuals.fg_stroke.width, Color32::RED);
             let stroke_y = Stroke::new(visuals.fg_stroke.width, Color32::GREEN);
 
-            let initial = initial_value(&self.keys).map(|v| {
-                (
-                    pos2(rect.min.x, rect.max.y - v.x),
-                    pos2(rect.min.x, rect.max.y - v.y),
-                )
-            });
+            let mut max = Vec2::ZERO;
+
+            let initial =
+                initial_value(&self.keys).map(|v| (pos2(rect.min.x, v.x), pos2(rect.min.x, v.y)));
 
             let (mut line_x, mut line_y): (Vec<_>, Vec<_>) = self
                 .keys
                 .iter()
                 .map(|(k, v)| {
+                    max = max.max(*v);
                     let x = rect.min.x + k * w;
-                    (pos2(x, rect.max.y - v.x), pos2(x, rect.max.y - v.y))
+                    (pos2(x, v.x), pos2(x, v.y))
                 })
                 .unzip();
 
@@ -260,10 +259,15 @@ impl Gradient for SizeGradient {
 
             if let Some((k, v)) = self.keys.last() {
                 if *k < 1.0 {
-                    line_x.push(pos2(rect.max.x, rect.max.y - v.x));
-                    line_y.push(pos2(rect.max.x, rect.max.y - v.y));
+                    line_x.push(pos2(rect.max.x, v.x));
+                    line_y.push(pos2(rect.max.x, v.y));
                 }
             }
+
+            // Scale to fit vertically and offset from rect.
+            let max = rect.height() / max.x.max(max.y);
+            line_x.iter_mut().for_each(|p| p.y = rect.max.y - p.y * max);
+            line_y.iter_mut().for_each(|p| p.y = rect.max.y - p.y * max);
 
             ui.painter().add(Shape::line(line_x, stroke_x));
             ui.painter().add(Shape::line(line_y, stroke_y));
