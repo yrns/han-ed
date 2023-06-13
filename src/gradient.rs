@@ -242,27 +242,22 @@ impl Gradient for SizeGradient {
             let initial =
                 initial_value(&self.keys).map(|v| (pos2(rect.min.x, v.x), pos2(rect.min.x, v.y)));
 
-            let (mut line_x, mut line_y): (Vec<_>, Vec<_>) = self
+            // Add a final key if the last one is < 1.0.
+            let last = self
                 .keys
-                .iter()
-                .map(|(k, v)| {
+                .last()
+                .filter(|(k, _)| *k < 1.0)
+                .map(|(_, v)| (pos2(rect.max.x, v.x), pos2(rect.max.x, v.y)));
+
+            let (mut line_x, mut line_y): (Vec<_>, Vec<_>) = initial
+                .into_iter()
+                .chain(self.keys.iter().map(|(k, v)| {
                     max = max.max(*v);
                     let x = rect.min.x + k * w;
                     (pos2(x, v.x), pos2(x, v.y))
-                })
+                }))
+                .chain(last.into_iter())
                 .unzip();
-
-            if let Some((x, y)) = initial {
-                line_x.insert(0, x);
-                line_y.insert(0, y);
-            }
-
-            if let Some((k, v)) = self.keys.last() {
-                if *k < 1.0 {
-                    line_x.push(pos2(rect.max.x, v.x));
-                    line_y.push(pos2(rect.max.x, v.y));
-                }
-            }
 
             // Scale to fit vertically and offset from rect.
             let max = rect.height() / max.x.max(max.y);
