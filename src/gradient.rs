@@ -127,19 +127,6 @@ pub trait Gradient {
     fn show_values(&mut self, ui: &mut Ui) -> Response;
 }
 
-impl ColorGradient {
-    // The starting color is the first key (if non-zero) or the last zero-value key.
-    fn initial_color(&self) -> Color32 {
-        if self.keys[0].0 > 0.0 {
-            rgba(&self.keys[0].1).into()
-        } else if let Some((_k, color)) = self.keys.iter().take_while(|k| k.0 == 0.0).last() {
-            rgba(color).into()
-        } else {
-            Color32::TEMPORARY_COLOR
-        }
-    }
-}
-
 impl Gradient for ColorGradient {
     type Value = Vec4;
 
@@ -150,10 +137,12 @@ impl Gradient for ColorGradient {
         if ui.is_rect_visible(rect) {
             let w = rect.width();
 
-            let mut mesh = start_strip(rect, self.initial_color());
-
             let keys = &mut self.keys;
             assert!(keys.len() > 0);
+
+            // The starting color is the first key (if non-zero) or the last zero-value key.
+            let color = initial_value(keys).map(rgba).unwrap_or_default();
+            let mut mesh = start_strip(rect, color.into());
 
             let mut last_k = 0.0;
             for (key, color) in keys.iter_mut().skip_while(|(k, _)| *k == 0.0) {
