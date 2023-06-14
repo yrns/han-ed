@@ -1,5 +1,6 @@
 pub mod asset;
-mod gradient;
+pub mod change;
+pub mod gradient;
 pub mod reffect;
 
 use std::{any::Any, fs::File, io::Write, mem::discriminant};
@@ -15,11 +16,12 @@ use bevy::{
     tasks::IoTaskPool,
 };
 use bevy_egui::{
-    egui::{self, widgets::DragValue, CollapsingHeader},
+    egui::{self, widgets::DragValue, Button, CollapsingHeader},
     EguiContexts, EguiPlugin,
 };
 use bevy_hanabi::prelude::*;
 
+use crate::change::*;
 use bevy_inspector_egui::{reflect_inspector::*, DefaultInspectorConfigPlugin};
 use gradient::{ColorGradient, Gradient, SizeGradient};
 use reffect::*;
@@ -44,10 +46,8 @@ macro_rules! value {
 
 // So we don't have to explicitly set the type for body in hl!
 #[doc(hidden)]
-fn __contents(
-    ui: &mut egui::Ui,
-    f: impl FnOnce(&mut egui::Ui) -> egui::Response,
-) -> egui::Response {
+#[inline]
+fn __contents(ui: &mut egui::Ui, f: impl FnOnce(&mut egui::Ui) -> Change) -> Change {
     f(ui)
 }
 
@@ -359,7 +359,8 @@ fn han_ed_ui(
                                         );
 
                                         re_changed |= (hl!("Capacity", ui, |ui| ui
-                                            .add(DragValue::new(&mut re.capacity)))
+                                            .add(DragValue::new(&mut re.capacity))
+                                            .into())
                                             | ui_spawner(&mut re.spawner, ui)
                                             | ui_reflect(
                                                 "Simulation Space",
@@ -379,22 +380,22 @@ fn han_ed_ui(
                                                     &mut re.init_position,
                                                     &mut env,
                                                     ui,
-                                                ) | ui_reflect(
+                                                ) | ui_option_reflect(
                                                     "Velocity",
                                                     &mut re.init_velocity,
                                                     &mut env,
                                                     ui,
-                                                ) | ui_reflect(
+                                                ) | ui_option_reflect(
                                                     "Size",
                                                     &mut re.init_size,
                                                     &mut env,
                                                     ui,
-                                                ) | ui_reflect(
+                                                ) | ui_option_reflect(
                                                     "Age",
                                                     &mut re.init_age,
                                                     &mut env,
                                                     ui,
-                                                ) | ui_reflect(
+                                                ) | ui_option_reflect(
                                                     "Lifetime",
                                                     &mut re.init_lifetime,
                                                     &mut env,
@@ -402,22 +403,22 @@ fn han_ed_ui(
                                                 )
                                             })
                                             | header!(ui, "Update Modifiers", |ui| {
-                                                ui_reflect(
+                                                ui_option_reflect(
                                                     "Acceleration",
                                                     &mut re.update_accel,
                                                     &mut env,
                                                     ui,
-                                                ) | ui_reflect(
+                                                ) | ui_option_reflect(
                                                     "Force Field",
                                                     &mut re.update_force_field,
                                                     &mut env,
                                                     ui,
-                                                ) | ui_reflect(
+                                                ) | ui_option_reflect(
                                                     "Linear Drag",
                                                     &mut re.update_linear_drag,
                                                     &mut env,
                                                     ui,
-                                                ) | ui_reflect(
+                                                ) | ui_option_reflect(
                                                     "AABB Kill",
                                                     &mut re.update_aabb_kill,
                                                     &mut env,
@@ -431,7 +432,7 @@ fn han_ed_ui(
                                                     &asset_server,
                                                     &image_paths,
                                                     ui,
-                                                ) | ui_reflect(
+                                                ) | ui_option_reflect(
                                                     "Set Color",
                                                     &mut re.render_set_color,
                                                     &mut env,
@@ -441,7 +442,7 @@ fn han_ed_ui(
                                                     &mut re.render_color_over_lifetime,
                                                     ui,
                                                     |g, ui| g.show(ui),
-                                                ) | ui_reflect(
+                                                ) | ui_option_reflect(
                                                     "Set Size",
                                                     &mut re.render_set_size,
                                                     &mut env,
@@ -453,14 +454,14 @@ fn han_ed_ui(
                                                     |g, ui| g.show(ui),
                                                 ) | ui
                                                     .checkbox(&mut re.render_billboard, "Billboard")
-                                                    | ui_reflect(
+                                                    | ui_option_reflect(
                                                         "Orient Along Velocity",
                                                         &mut re.render_orient_along_velocity,
                                                         &mut env,
                                                         ui,
                                                     )
                                             }))
-                                        .changed;
+                                        .changed();
                                     });
 
                                 if re_changed {
@@ -496,32 +497,6 @@ fn han_ed_ui(
     });
 }
 
-trait Merge {
-    fn merge(self) -> egui::Response;
-}
-
-impl Merge for egui::InnerResponse<egui::Response> {
-    fn merge(self) -> egui::Response {
-        self.inner | self.response
-    }
-}
-
-// For ComboBox, we only return the item response that's changed, or the header when closed.
-impl Merge for egui::InnerResponse<Option<Option<egui::Response>>> {
-    fn merge(self) -> egui::Response {
-        self.inner.flatten().unwrap_or(self.response)
-    }
-}
-
-// Return the inner response or the header when closed. We don't want the body response since it
-// will never be marked changed.
-impl Merge for egui::containers::CollapsingResponse<egui::Response> {
-    fn merge(self) -> egui::Response {
-        //self.body_response.unwrap_or(self.header_response)
-        self.body_returned.unwrap_or(self.header_response)
-    }
-}
-
 // #[inline]
 // fn merge(ir: egui::InnerResponse<egui::Response>) -> egui::Response {
 //     ir.response | ir.inner
@@ -536,7 +511,7 @@ fn short_circuit(
 ) -> Option<bool> {
     if let Some(mut v) = value.downcast_mut::<Value<f32>>() {
         // Is this id unique enough?
-        return Some(ui_value(id.with("valuef32"), &mut v, "", ui).changed);
+        return Some(ui_value(id.with("valuef32"), &mut v, "", ui).changed());
     }
 
     None
@@ -548,7 +523,7 @@ fn ui_particle_texture(
     asset_server: &AssetServer,
     image_paths: &AssetPaths<Image>,
     ui: &mut egui::Ui,
-) -> egui::Response {
+) -> Change {
     ui.horizontal(|ui| {
         ui.label(label);
 
@@ -575,7 +550,7 @@ fn ui_particle_texture(
                 // None is the first option.
                 let none = ui.selectable_value(data, ParticleTexture::None, "None");
                 if none.changed {
-                    return Some(none);
+                    return Some(none.into());
                 }
 
                 // We need to filter out textures that don't work for effects like D3 textures.
@@ -602,7 +577,7 @@ fn ui_particle_texture(
 
                         *data = ParticleTexture::Texture(texture);
                         resp.mark_changed();
-                        return Some(resp);
+                        return Some(resp.into());
                     }
                 }
 
@@ -613,13 +588,12 @@ fn ui_particle_texture(
     .inner
 }
 
-#[allow(unused)]
 fn ui_option<T: Default>(
     label: &str,
     data: &mut Option<T>,
     ui: &mut egui::Ui,
-    f: impl FnOnce(&mut T, &mut egui::Ui) -> egui::Response,
-) -> egui::Response {
+    f: impl FnOnce(&mut T, &mut egui::Ui) -> Change,
+) -> Change {
     ui.horizontal(|ui| {
         //ui.label(label);
         let mut opt = data.is_some();
@@ -630,8 +604,8 @@ fn ui_option<T: Default>(
         };
 
         match data {
-            Some(v) => response | f(v, ui),
-            None => response,
+            Some(v) => f(v, ui) | response,
+            None => response.into(),
         }
     })
     .inner
@@ -639,23 +613,35 @@ fn ui_option<T: Default>(
 
 fn ui_reflect<T: Reflect>(
     label: &str,
-    data: &mut T,
+    value: &mut T,
     env: &mut InspectorUi,
     ui: &mut egui::Ui,
     //options: &dyn Any
-) -> egui::Response {
-    let mut ir = ui.horizontal(|ui| {
+) -> Change {
+    ui.horizontal(|ui| {
         ui.label(label);
-        env.ui_for_reflect_with_options(data, ui, ui.id().with(label), &())
-    });
-    if ir.inner {
-        ir.response.mark_changed()
-    }
-    ir.response
+        env.ui_for_reflect_with_options(value, ui, ui.id().with(label), &())
+    })
+    .inner
+    .into()
+}
+
+fn ui_option_reflect<T: Reflect + Default>(
+    label: &str,
+    value: &mut Option<T>,
+    env: &mut InspectorUi,
+    ui: &mut egui::Ui,
+    //options: &dyn Any
+) -> Change {
+    ui_option(label, value, ui, |value, ui| {
+        env.ui_for_reflect_with_options(value, ui, ui.id().with(label), &())
+            .into()
+    })
+    .into()
 }
 
 // Maybe infinite period should be a separate checkbox.
-fn ui_spawner(spawner: &mut Spawner, ui: &mut egui::Ui) -> egui::Response {
+fn ui_spawner(spawner: &mut Spawner, ui: &mut egui::Ui) -> Change {
     header!(ui, "Spawner", |ui| {
         value!("Particles", ui, spawner.num_particles, "#")
             | value!("Spawn Time", ui, spawner.spawn_time, "s")
@@ -685,12 +671,7 @@ fn drag_value<'a>(v: &'a mut f32, suffix: &str) -> DragValue<'a> {
 // could tune the DragValues for each case (and suffix). Also, hover information from the doc
 // strings would be nice. Maybe this information could be encoded statically in the modifiers.
 // TODO infinity for period
-fn ui_value(
-    id: egui::Id,
-    value: &mut Value<f32>,
-    suffix: &str,
-    ui: &mut egui::Ui,
-) -> egui::Response {
+fn ui_value(id: egui::Id, value: &mut Value<f32>, suffix: &str, ui: &mut egui::Ui) -> Change {
     // The horizontal is needed for when this is used within a reflect value. The reflect ui adds
     // some odd spacing.
     ui.horizontal(|ui| {
@@ -713,7 +694,7 @@ fn ui_value(
                         Value::Uniform((v, _)) => {
                             *value = Value::Single(*v);
                             single.mark_changed();
-                            return Some(single);
+                            return Some(single.into());
                         }
                         _ => (),
                     }
@@ -734,7 +715,7 @@ fn ui_value(
                                 Value::Uniform((0.0, 0.0))
                             };
                             uniform.mark_changed();
-                            return Some(uniform);
+                            return Some(uniform.into());
                         }
                         _ => (),
                     }

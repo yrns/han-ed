@@ -7,6 +7,8 @@ use bevy::{
 use bevy_egui::egui::{self, epaint::Hsva, widgets::color_picker::*, *};
 use bevy_hanabi::{ColorOverLifetimeModifier, SizeOverLifetimeModifier};
 
+use crate::change::Change;
+
 #[derive(Clone, Reflect, FromReflect)]
 pub struct ColorGradient {
     keys: Vec<(f32, Vec4)>,
@@ -119,18 +121,18 @@ fn show_keys(keys: &mut Vec<(f32, impl IntoColor)>, rect: Rect, ui: &mut Ui) -> 
 pub trait Gradient {
     type Value;
 
-    fn show(&mut self, ui: &mut Ui) -> Response {
+    fn show(&mut self, ui: &mut Ui) -> Change {
         self.show_gradient(ui) | self.show_values(ui)
     }
 
-    fn show_gradient(&mut self, ui: &mut Ui) -> Response;
-    fn show_values(&mut self, ui: &mut Ui) -> Response;
+    fn show_gradient(&mut self, ui: &mut Ui) -> Change;
+    fn show_values(&mut self, ui: &mut Ui) -> Change;
 }
 
 impl Gradient for ColorGradient {
     type Value = Vec4;
 
-    fn show_gradient(&mut self, ui: &mut Ui) -> Response {
+    fn show_gradient(&mut self, ui: &mut Ui) -> Change {
         let desired_size = vec2(ui.spacing().slider_width, ui.spacing().interact_size.y);
         let (rect, mut response) = ui.allocate_at_least(desired_size, Sense::hover());
 
@@ -169,14 +171,14 @@ impl Gradient for ColorGradient {
                 response.mark_changed();
             }
         }
-        response
+        response.into()
     }
 
     // The color picker from egui is natively HSVA. So there's a lot of unnecessary conversion and
     // weirdness happening. We are getting spammed with changes even when the color is not changing,
     // which I presume has something to do with the conversion to HSVA. Which is why egui caches them?
     // We may have to write our own color picker just for RGBA.
-    fn show_values(&mut self, ui: &mut Ui) -> Response {
+    fn show_values(&mut self, ui: &mut Ui) -> Change {
         let keys = &mut self.keys;
 
         let mut changed = false;
@@ -206,14 +208,14 @@ impl Gradient for ColorGradient {
             response.mark_changed();
         }
 
-        response
+        response.into()
     }
 }
 
 impl Gradient for SizeGradient {
     type Value = Vec2;
 
-    fn show_gradient(&mut self, ui: &mut Ui) -> Response {
+    fn show_gradient(&mut self, ui: &mut Ui) -> Change {
         assert!(self.keys.len() > 0);
 
         let desired_size = vec2(ui.spacing().slider_width, ui.spacing().interact_size.y);
@@ -262,10 +264,10 @@ impl Gradient for SizeGradient {
                 response.mark_changed();
             }
         }
-        response
+        response.into()
     }
 
-    fn show_values(&mut self, ui: &mut Ui) -> Response {
+    fn show_values(&mut self, ui: &mut Ui) -> Change {
         ui.horizontal(|ui| {
             ui.spacing_mut().interact_size = egui::Vec2::splat(4.0);
 
@@ -292,7 +294,7 @@ impl Gradient for SizeGradient {
                 self.keys.push((1.0, Vec2::ZERO));
                 response.mark_changed();
             }
-            response
+            response.into()
         })
         .inner
     }
