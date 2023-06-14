@@ -252,12 +252,15 @@ fn han_ed_ui(
             .default_open(true)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    if ui.button("New").clicked() {
-                        // spawn new
-                    };
-                    if ui.button("Random").clicked() {
-                        // spawn random
-                    }
+                    // TODO
+                    ui.add_enabled_ui(false, |ui| {
+                        if ui.button("New").clicked() {
+                            // spawn new
+                        }
+                        if ui.button("Random").clicked() {
+                            // spawn random
+                        }
+                    });
                 });
                 ui.separator();
 
@@ -340,8 +343,8 @@ fn han_ed_ui(
                                             }
 
                                             // TODO
-                                            _ = ui.button("Clone");
-                                            _ = ui.button("-");
+                                            _ = ui.add_enabled(false, egui::Button::new("Clone"));
+                                            _ = ui.add_enabled(false, egui::Button::new("🗙"));
                                         });
 
                                         // Set up context for reflect values.
