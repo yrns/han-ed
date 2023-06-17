@@ -55,8 +55,8 @@ macro_rules! value {
 // So we don't have to explicitly set the type for body in hl!
 #[doc(hidden)]
 #[inline]
-fn __contents(ui: &mut egui::Ui, f: impl FnOnce(&mut egui::Ui) -> Change) -> Change {
-    f(ui)
+fn __contents<R: Into<Change>>(ui: &mut egui::Ui, f: impl FnOnce(&mut egui::Ui) -> R) -> Change {
+    f(ui).into()
 }
 
 /// Horizontal, with label.
@@ -392,8 +392,7 @@ fn han_ed_ui(
                                         );
 
                                         re_changed |= (hl!("Capacity", ui, |ui| ui
-                                            .add(DragValue::new(&mut re.capacity))
-                                            .into())
+                                            .add(DragValue::new(&mut re.capacity)))
                                             | ui_spawner(&mut re.spawner, ui)
                                             | ui_reflect(
                                                 "Simulation Space",
@@ -526,7 +525,8 @@ fn han_ed_ui(
                                 if response.clicked() {
                                     *handle = Some(asset_server.load(path.as_path()));
                                 }
-                                response.into()
+                                // impl Into<Change> for ()?
+                                response
                             });
                         }
                     }
@@ -564,7 +564,7 @@ fn edit_path(
                             *path = p;
                         }
                     }
-                    return response.into();
+                    return response;
                 }
 
                 Err(e) => error!("not a valid path: {:?}", e),
