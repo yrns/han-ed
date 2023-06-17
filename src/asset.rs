@@ -1,4 +1,4 @@
-use std::path::*;
+use std::{borrow::Cow, path::*};
 
 use ::serde::de::DeserializeSeed;
 use anyhow::{anyhow, Result};
@@ -69,6 +69,7 @@ impl AssetLoader for HanLoader {
         })
     }
 
+    // Should .ron be reserved for non-reflect?
     fn extensions(&self) -> &[&str] {
         &["han", "han.ron"]
     }
@@ -78,39 +79,149 @@ impl AssetLoader for HanLoader {
 // TODO: add a preview, e.g. thumbnail for images
 #[derive(Resource)]
 pub struct AssetPaths<T: Asset> {
+    pub root_path: PathBuf,
     pub extension: &'static str,
-    pub paths: Vec<(PathBuf, Option<Handle<T>>)>,
+    pub paths: Vec<(PathBuf, Option<Handle<T>>, bool)>,
 }
 
 impl<T: Asset> AssetPaths<T> {
     pub fn new(extension: &'static str) -> Self {
-        let paths = glob::glob(&format!("assets/**/*.{}", extension))
+        // TODO read asset dir
+        let root_path = PathBuf::from("assets").canonicalize().unwrap();
+
+        // TODO read from asset io instead of glob - similarly, can we read all known assets by
+        // extension?
+        let pat = format!("{}/**/*.{}", root_path.to_str().unwrap(), extension);
+        let paths = glob::glob(&pat)
             .map_err(|e| error!("failed to find asset paths: {:?}", e))
             .map(|paths| {
                 paths
                     .map(|path| {
                         path.map_err(|e| error!("error: {:?}", e)).and_then(|path| {
                             // We want the paths stored relative to assets, not the root.
-                            path.strip_prefix("assets")
+                            path.strip_prefix(&root_path)
                                 .map(|path| path.to_path_buf())
                                 .map_err(|e| error!("error: {:?}", e))
                         })
                     })
                     // Filter out errors.
                     .flatten()
-                    .map(|path| (path, None))
+                    .map(|path| (path, None, true))
                     .collect()
             })
             .unwrap_or_default();
 
-        Self { extension, paths }
+        Self {
+            root_path,
+            extension,
+            paths,
+        }
     }
 
-    // Iterate all paths with handles.
+    // Iterate all paths with handles. Is this needed?
     pub fn iter(&self) -> impl Iterator<Item = (&Path, &Handle<T>)> {
         self.paths
             .iter()
-            .filter_map(|(p, h)| h.as_ref().map(|h| (p.as_path(), h)))
+            .filter_map(|(p, h, ..)| h.as_ref().map(|h| (p.as_path(), h)))
+    }
+
+    // This is just to get around multiple borrows. Needs revision.
+    pub fn iter_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (&Path, &mut PathBuf, &mut Option<Handle<T>>, &mut bool)> {
+        self.paths
+            .iter_mut()
+            .map(|(p, h, saved)| (self.root_path.as_ref(), p, h, saved))
+    }
+}
+
+// Make sure multiple assets don't point to the same path?
+pub fn validate_path<'a>(
+    path: &'a str,
+    ext: &str,
+    root_path: &Path,
+    //asset_server: &AssetServer,
+) -> Result<Cow<'a, Path>> {
+    use path_absolutize::path_dedot::*;
+
+    // No wasm/android:
+    // let asset_io = asset_server
+    //     .asset_io()
+    //     .downcast_ref::<FileAssetIo>()
+    //     .ok_or_else(|| anyhow!("not FileAssetIo"))?;
+    // let asset_dir = asset_io.root_path();
+
+    let path = Path::new(path);
+
+    // Check empty path/file name.
+    if path.as_os_str().len() == 0 {
+        return Err(anyhow!("empty path"));
+    } else if path.file_name().is_none() {
+        return Err(anyhow!("no file name: {}", path.display()));
+    }
+
+    // Contain the path to assets. This can make relative paths absolute by using "..".
+    let path = path.parse_dot_from(root_path)?;
+    let path = strip_prefix(path, root_path)?;
+
+    // Make sure it's relative to assets. This should never be true after stripping the prefix but
+    // who knows.
+    if path.is_absolute() {
+        return Err(anyhow!("path not relative: {}", path.display()));
+    }
+
+    // Ensure extension.
+    let path = with_extension(path.into(), ext);
+
+    Ok(path)
+}
+
+// AFAIK, there is no way to (without unsafe) easily replace the reference inside a Cow with a
+// shorter reference even if they both point to the same memory. So we copy the stripped path into a
+// new PathBuf.
+fn strip_prefix<'a>(path: Cow<'a, Path>, prefix: &Path) -> Result<Cow<'a, Path>> {
+    Ok(if path.is_absolute() {
+        Cow::Owned(path.strip_prefix(prefix)?.into())
+    } else {
+        path
+    })
+}
+
+// Like Path::with_extension but Cow-like.
+pub fn with_extension<'a>(path: Cow<'a, Path>, extension: &str) -> Cow<'a, Path> {
+    if path.extension().is_some_and(|ext| ext == extension) {
+        path
+    } else {
+        Cow::from(path.with_extension(extension))
+    }
+}
+
+// Make unique path for new assets.
+pub fn unique_path<'a>(path_buf: &'a PathBuf, ext: &str) -> Result<Cow<'a, Path>> {
+    //use path_absolutize::*;
+
+    if !path_buf.symlink_metadata().is_ok() {
+        Ok(Cow::from(path_buf))
+    } else {
+        let file_prefix = path_buf
+            .with_extension("") // this clones
+            .file_name()
+            .ok_or_else(|| anyhow!("no file name: {}", path_buf.display()))?
+            .to_string_lossy()
+            .to_string();
+
+        let mut path_buf = path_buf.clone();
+        for i in 1..=64 {
+            path_buf.set_file_name(format!("{}{}.{}", file_prefix, i, ext));
+            if !path_buf.symlink_metadata().is_ok() {
+                return Ok(Cow::from(path_buf));
+            }
+        }
+
+        Err(anyhow!(
+            "failed to make unique path: {}",
+            path_buf.display()
+        ))
     }
 }
 

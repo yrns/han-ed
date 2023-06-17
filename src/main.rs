@@ -3,10 +3,18 @@ pub mod change;
 pub mod gradient;
 pub mod reffect;
 
-use std::{any::Any, fs::File, io::Write, mem::discriminant};
+use std::{
+    any::Any,
+    borrow::Cow,
+    fs::File,
+    io::Write,
+    mem::discriminant,
+    path::{Path, PathBuf},
+};
 
 use asset::*;
 
+use anyhow::Result;
 use bevy::{
     core_pipeline::bloom::BloomSettings,
     log::LogPlugin,
@@ -16,7 +24,7 @@ use bevy::{
     tasks::IoTaskPool,
 };
 use bevy_egui::{
-    egui::{self, widgets::DragValue, Button, CollapsingHeader},
+    egui::{self, widgets::DragValue, CollapsingHeader},
     EguiContexts, EguiPlugin,
 };
 use bevy_hanabi::prelude::*;
@@ -77,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             DefaultPlugins
                 .set(LogPlugin {
                     level: bevy::log::Level::WARN,
-                    filter: "bevy_hanabi=warn,spawn=trace".to_string(),
+                    filter: "bevy_hanabi=warn,han-ed=debug".to_string(),
                 })
                 // .set(AssetPlugin {
                 //     watch_for_changes: ChangeWatcher::with_delay(Duration::from_millis(400)),
@@ -252,20 +260,19 @@ fn han_ed_ui(
             .default_open(true)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    // TODO
+                    if ui.button("New").clicked() {
+                        // Add a new default effect.
+                    }
+
                     ui.add_enabled_ui(false, |ui| {
-                        if ui.button("New").clicked() {
-                            // spawn new
-                        }
                         if ui.button("Random").clicked() {
-                            // spawn random
+                            // TODO spawn random
                         }
                     });
                 });
                 ui.separator();
 
-                // duplicate, remove?, does rename work?
-                for (path, handle) in reffect_paths.paths.iter_mut() {
+                for (root_path, path, handle, saved) in reffect_paths.iter_mut() {
                     match handle {
                         Some(handle) => match reffects.get_mut(&handle) {
                             Some(re) => {
@@ -273,12 +280,24 @@ fn han_ed_ui(
 
                                 let mut re_changed = false;
 
-                                CollapsingHeader::new(path.to_string_lossy())
+                                let effect_header = match path.file_name() {
+                                    Some(_) => format!("{}: ({})", re.name, path.display()),
+                                    None => re.name.to_owned(),
+                                };
+
+                                CollapsingHeader::new(effect_header)
                                     .default_open(true)
+                                    // If we don't set the source, it uses the header text, which potentially changes.
+                                    .id_source(&handle)
                                     .show(ui, |ui| {
                                         ui.horizontal(|ui| {
                                             ui.label("Name");
-                                            ui.text_edit_singleline(&mut re.name);
+                                            re_changed |= ui
+                                                .add(
+                                                    egui::TextEdit::singleline(&mut re.name)
+                                                        .id_source("name"),
+                                                )
+                                                .changed();
 
                                             if let Some(entity) = live_entity {
                                                 if ui.button("Hide").clicked() {
@@ -298,11 +317,17 @@ fn han_ed_ui(
                                                 }
                                             }
 
+                                            // Move to AssetPaths?
                                             // TODO confirm overwrite if the name has changed
-                                            // only enable if there are unsaved changes
-                                            if ui.button("Save").clicked() {
-                                                #[cfg(not(target_arch = "wasm32"))]
-                                                let file_name = format!("assets/{}.han", re.name);
+                                            #[cfg(not(target_arch = "wasm32"))]
+                                            if ui
+                                                .add_enabled(!*saved, egui::Button::new("Save"))
+                                                .clicked()
+                                            {
+                                                // Check for errors?
+                                                *saved = true;
+
+                                                let path = root_path.join(&path);
 
                                                 // Clone so that we can serialize in a different
                                                 // thread? Also, convert texture to asset path:
@@ -312,6 +337,7 @@ fn han_ed_ui(
                                                         if let Some(path) = asset_server
                                                             .get_handle_path(handle.id())
                                                         {
+                                                            // This is where we use relative-path?
                                                             effect.render_particle_texture =
                                                                 ParticleTexture::Path(
                                                                     path.path().to_path_buf(),
@@ -333,11 +359,14 @@ fn han_ed_ui(
                                                         )
                                                         .unwrap();
                                                         //let ron = serialize_ron(effect).unwrap();
-                                                        File::create(file_name)
+                                                        let op = File::create(path)
                                                             .and_then(|mut file| {
                                                                 file.write(ron.as_bytes())
                                                             })
-                                                            .map_err(|e| error!("{}", e))
+                                                            .map_err(|e| error!("{}", e));
+
+                                                        //info!("saved: {}", path);
+                                                        op
                                                     })
                                                     .detach();
                                             }
@@ -345,6 +374,10 @@ fn han_ed_ui(
                                             // TODO
                                             _ = ui.add_enabled(false, egui::Button::new("Clone"));
                                             _ = ui.add_enabled(false, egui::Button::new("🗙"));
+                                        });
+
+                                        _ = edit_path(path, ui, |path| {
+                                            validate_path(path, "han", root_path)
                                         });
 
                                         // Set up context for reflect values.
@@ -465,6 +498,8 @@ fn han_ed_ui(
                                     });
 
                                 if re_changed {
+                                    *saved = false;
+
                                     // Regenerate (if live).
                                     if let Some(entity) = live_entity {
                                         // This is just hide/show. Can we swap something inside the
@@ -500,10 +535,52 @@ fn han_ed_ui(
     });
 }
 
-// #[inline]
-// fn merge(ir: egui::InnerResponse<egui::Response>) -> egui::Response {
-//     ir.response | ir.inner
-// }
+// Probably way easier to validate on save.
+fn edit_path(
+    path: &mut PathBuf,
+    ui: &mut egui::Ui,
+    validate: impl Fn(&str) -> Result<Cow<Path>>,
+) -> Change {
+    hl!("Path", ui, |ui| {
+        // We have to edit as a string since PathBuf doesn't impl TextBuffer.
+        let mut path_str = path.to_string_lossy().to_string();
+
+        // id_source isn't necessary any more.
+        let response = ui.add(egui::TextEdit::singleline(&mut path_str).id_source("path"));
+        if response.gained_focus() {
+            // Save a backup of the path in case validation fails.
+            ui.memory_mut(|memory| memory.data.insert_temp::<PathBuf>(ui.id(), path.clone()));
+        }
+
+        // Require enter to validate and update path?
+        //ui.input(|i| i.key_pressed(egui::Key::Enter))
+        if response.lost_focus() {
+            match validate(&path_str) {
+                Ok(p) => {
+                    match p {
+                        Cow::Borrowed(_) => info!("path valid: {}", p.display()), // It's good as is.
+                        Cow::Owned(p) => {
+                            info!("path revised: {}", p.display());
+                            *path = p;
+                        }
+                    }
+                    return response.into();
+                }
+
+                Err(e) => error!("not a valid path: {:?}", e),
+            }
+
+            // Restore prior path.
+            if let Some(p) = ui.memory_mut(|memory| memory.data.get_temp::<PathBuf>(ui.id())) {
+                *path = p;
+            }
+        } else if response.changed() {
+            *path = path_str.into();
+        }
+
+        response.into()
+    })
+}
 
 fn short_circuit(
     _env: &mut InspectorUi,
@@ -558,7 +635,7 @@ fn ui_particle_texture(
 
                 // We need to filter out textures that don't work for effects like D3 textures.
                 //for (id, _image) in (*images).iter() {
-                for (path, handle) in image_paths.paths.iter() {
+                for (path, handle, ..) in image_paths.paths.iter() {
                     // Can an effect point to an unloaded image?
                     let checked = handle
                         .as_ref()
