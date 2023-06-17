@@ -53,7 +53,7 @@ fn __contents(ui: &mut egui::Ui, f: impl FnOnce(&mut egui::Ui) -> Change) -> Cha
 
 /// Horizontal, with label.
 macro_rules! hl {
-    ($label:literal, $ui:ident, $body:expr) => {
+    ($label:expr, $ui:ident, $body:expr) => {
         $ui.horizontal(|ui| {
             ui.label($label);
             __contents(ui, $body)
@@ -486,10 +486,13 @@ fn han_ed_ui(
                             }
                         },
                         None => {
-                            ui.label(format!("{}", path.display()));
-                            if ui.button("Load").clicked() {
-                                *handle = Some(asset_server.load(path.as_path()));
-                            }
+                            hl!(path.to_string_lossy(), ui, |ui| {
+                                let response = ui.button("Load");
+                                if response.clicked() {
+                                    *handle = Some(asset_server.load(path.as_path()));
+                                }
+                                response.into()
+                            });
                         }
                     }
                 }
