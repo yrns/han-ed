@@ -19,7 +19,6 @@ use bevy::{
     core_pipeline::bloom::BloomSettings,
     log::LogPlugin,
     prelude::*,
-    reflect::serde::ReflectSerializer,
     render::{render_resource::WgpuFeatures, settings::WgpuSettings, RenderPlugin},
     tasks::IoTaskPool,
 };
@@ -324,51 +323,21 @@ fn han_ed_ui(
                                                 .add_enabled(!*saved, egui::Button::new("Save"))
                                                 .clicked()
                                             {
-                                                // Check for errors?
-                                                *saved = true;
-
-                                                let path = root_path.join(&path);
-
-                                                // Clone so that we can serialize in a different
-                                                // thread? Also, convert texture to asset path:
-                                                let mut effect = re.clone();
-                                                match &mut effect.render_particle_texture {
-                                                    ParticleTexture::Texture(handle) => {
-                                                        if let Some(path) = asset_server
-                                                            .get_handle_path(handle.id())
-                                                        {
-                                                            // This is where we use relative-path?
-                                                            effect.render_particle_texture =
-                                                                ParticleTexture::Path(
-                                                                    path.path().to_path_buf(),
-                                                                );
-                                                        }
+                                                // Clone some things so they can be processed in a different thread.
+                                                match save_effect(
+                                                    re.clone(),
+                                                    (root_path, path),
+                                                    type_registry.clone(),
+                                                    &asset_server,
+                                                ) {
+                                                    Ok(_) => *saved = true,
+                                                    // This does not capture all the errors - in
+                                                    // order to get the other ones we'd have to use
+                                                    // a channel or an event.
+                                                    Err(e) => {
+                                                        error!("error saving: {:?}", e)
                                                     }
-                                                    _ => (),
                                                 }
-
-                                                let tr = type_registry.clone(); // Arc
-                                                IoTaskPool::get()
-                                                    .spawn(async move {
-                                                        let tr = tr.read();
-                                                        let rs =
-                                                            ReflectSerializer::new(&effect, &tr);
-                                                        let ron = ron::ser::to_string_pretty(
-                                                            &rs,
-                                                            ron::ser::PrettyConfig::new(),
-                                                        )
-                                                        .unwrap();
-                                                        //let ron = serialize_ron(effect).unwrap();
-                                                        let op = File::create(path)
-                                                            .and_then(|mut file| {
-                                                                file.write(ron.as_bytes())
-                                                            })
-                                                            .map_err(|e| error!("{}", e));
-
-                                                        //info!("saved: {}", path);
-                                                        op
-                                                    })
-                                                    .detach();
                                             }
 
                                             // TODO

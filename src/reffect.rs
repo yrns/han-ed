@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use bevy::{prelude::*, reflect::TypeUuid};
 //use bevy::reflect::*;
 use crate::gradient::{ColorGradient, SizeGradient};
@@ -92,7 +90,8 @@ pub enum UpdateAccel {
 pub enum ParticleTexture {
     #[default]
     None,
-    Path(PathBuf),
+    // RelativePathBuf does not impl Reflect.
+    Path(String),
     Texture(Handle<Image>),
 }
 
@@ -110,7 +109,7 @@ impl ParticleTexture {
             ParticleTexture::Path(path) => {
                 error!(
                     "texture path for loaded effect asset should not happen: {}",
-                    path.display()
+                    path
                 );
                 None
             }
@@ -187,7 +186,7 @@ impl REffect {
         match self.render_particle_texture {
             ParticleTexture::Path(ref path) => {
                 // This should never happen since the texture is loaded when the asset is loaded.
-                error!("particle texture not loaded: {}", path.display())
+                error!("particle texture not loaded: {}", path)
             }
             ParticleTexture::Texture(ref handle) => {
                 effect = effect.render(ParticleTextureModifier {

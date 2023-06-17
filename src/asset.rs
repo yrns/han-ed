@@ -9,6 +9,7 @@ use bevy::{
     utils::BoxedFuture,
 };
 use bevy_hanabi::EffectAsset;
+use relative_path::*;
 
 use crate::{gradient::*, reffect::*, LiveEffect};
 
@@ -55,6 +56,10 @@ impl AssetLoader for HanLoader {
             // Load the particle texture, if set.
             let loaded_asset = match reff.render_particle_texture {
                 ParticleTexture::Path(path) => {
+                    let rel_path = RelativePath::from_path(&path)?;
+                    // This looks silly, but it just converts the platform-independent relative path
+                    // into a native one.
+                    let path = rel_path.to_path("");
                     let asset_path = AssetPath::new_ref(&path, None);
                     let handle = load_context.get_handle(asset_path.clone());
                     reff.render_particle_texture = ParticleTexture::Texture(handle);
@@ -223,6 +228,53 @@ pub fn unique_path<'a>(path_buf: &'a PathBuf, ext: &str) -> Result<Cow<'a, Path>
             path_buf.display()
         ))
     }
+}
+
+pub fn save_effect(
+    mut effect: REffect,
+    // Root and relative path to asset.
+    (root_path, path): (&Path, &Path),
+    type_registry: AppTypeRegistry,
+    asset_server: &AssetServer,
+) -> Result<()> {
+    use bevy::{reflect::serde::ReflectSerializer, tasks::IoTaskPool};
+    use std::{fs::File, io::Write};
+
+    // Convert texture to asset path:
+    match &mut effect.render_particle_texture {
+        ParticleTexture::Texture(handle) => {
+            if let Some(path) = asset_server.get_handle_path(handle.id()) {
+                // Write platform-independent relative path.
+                let rel_path = RelativePathBuf::from_path(path.path())?;
+                effect.render_particle_texture = ParticleTexture::Path(rel_path.into_string());
+            }
+        }
+        _ => (),
+    }
+
+    // Clone to move.
+    let effect_path = root_path.join(path);
+
+    IoTaskPool::get()
+        .spawn(async move {
+            let ron = {
+                let type_registry = type_registry.read();
+                let rs = ReflectSerializer::new(&effect, &type_registry);
+                ron::ser::to_string_pretty(&rs, ron::ser::PrettyConfig::new())
+                    .map_err(|e| error!("failed to serialize: {:?}", e))
+            };
+
+            // Should this handle creation of directories or just error?
+            ron.and_then(|ron| {
+                File::create(&effect_path)
+                    .and_then(|mut file| file.write(ron.as_bytes()))
+                    .map_err(|e| error!("{}", e))
+                    .map(|bytes| info!("saved effect ({} bytes): {:?}", bytes, effect_path))
+            })
+        })
+        .detach();
+
+    Ok(())
 }
 
 pub fn spawn_circle(
