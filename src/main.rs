@@ -47,7 +47,13 @@ macro_rules! header {
 macro_rules! value {
     ($label:literal, $ui:ident, $value:expr, $suffix:literal) => {{
         let id = $ui.id().with($label);
-        hl!($label, $ui, |ui| ui_value(id, &mut $value, $suffix, ui))
+        hl!($label, $ui, |ui| ui_value(
+            id,
+            &mut $value,
+            $suffix,
+            ui,
+            value_f32
+        ))
     }};
 }
 
@@ -433,11 +439,11 @@ fn han_ed_ui(
                                                     &asset_server,
                                                     &image_paths,
                                                     ui,
-                                                ) | ui_option_reflect(
+                                                ) | ui_option(
                                                     "Set Color",
                                                     &mut re.render_set_color,
-                                                    &mut env,
                                                     ui,
+                                                    ui_set_color,
                                                 ) | ui_option(
                                                     "Color Over Lifetime",
                                                     &mut re.render_color_over_lifetime,
@@ -560,7 +566,7 @@ fn short_circuit(
 ) -> Option<bool> {
     if let Some(mut v) = value.downcast_mut::<Value<f32>>() {
         // Is this id unique enough?
-        return Some(ui_value(id.with("valuef32"), &mut v, "", ui).changed());
+        return Some(ui_value(id.with("valuef32"), &mut v, "", ui, value_f32).changed());
     }
 
     None
@@ -719,8 +725,16 @@ fn drag_value<'a>(v: &'a mut f32, suffix: &str) -> DragValue<'a> {
 // Values are all different units (time, distance, velocity, acceleration). It would be nice if we
 // could tune the DragValues for each case (and suffix). Also, hover information from the doc
 // strings would be nice. Maybe this information could be encoded statically in the modifiers.
-// TODO infinity for period
-fn ui_value(id: egui::Id, value: &mut Value<f32>, suffix: &str, ui: &mut egui::Ui) -> Change {
+fn ui_value<T: FromReflect + Copy + Default, F>(
+    id: egui::Id,
+    value: &mut Value<T>,
+    suffix: &str,
+    ui: &mut egui::Ui,
+    mut value_fn: F,
+) -> Change
+where
+    F: FnMut(&mut Value<T>, &str, &mut egui::Ui) -> Change,
+{
     // The horizontal is needed for when this is used within a reflect value. The reflect ui adds
     // some odd spacing.
     ui.horizontal(|ui| {
@@ -734,7 +748,7 @@ fn ui_value(id: egui::Id, value: &mut Value<f32>, suffix: &str, ui: &mut egui::U
             })
             .show_ui(ui, |ui| {
                 let mut single = ui.selectable_label(
-                    discriminant(value) == discriminant(&Value::Single(0.0)),
+                    discriminant(value) == discriminant(&Value::Single(T::default())),
                     "Single",
                 );
 
@@ -750,19 +764,23 @@ fn ui_value(id: egui::Id, value: &mut Value<f32>, suffix: &str, ui: &mut egui::U
                 }
 
                 let mut uniform = ui.selectable_label(
-                    discriminant(value) == discriminant(&Value::Uniform((0.0, 0.0))),
+                    discriminant(value) == discriminant(&Value::Uniform(Default::default())),
                     "Uniform",
                 );
 
                 if uniform.clicked() {
                     match value {
                         Value::Single(v) => {
-                            *value = if v.is_finite() {
-                                Value::Uniform((*v, *v))
-                            } else {
-                                // FIX this crashes w/o error if the effect is visible
-                                Value::Uniform((0.0, 0.0))
-                            };
+                            // An infinite uniform doensn't make much sense, nor an infinite
+                            // color. Revisit this later.
+                            *value = Value::Uniform((*v, *v));
+
+                            // *value = if v.is_finite() {
+                            //     Value::Uniform((*v, *v))
+                            // } else {
+                            //     // FIX this crashes w/o error if the effect is visible
+                            //     Value::Uniform(Default::default())
+                            // };
                             uniform.mark_changed();
                             return Some(uniform.into());
                         }
@@ -773,25 +791,68 @@ fn ui_value(id: egui::Id, value: &mut Value<f32>, suffix: &str, ui: &mut egui::U
                 None
             })
             .merge()
-            | match value {
-                Value::Single(ref mut v) => {
-                    let mut dv = ui.add(drag_value(v, suffix));
-                    if suffix == "period" && dv.clicked_by(egui::PointerButton::Secondary) {
-                        dv.mark_changed();
-                        *v = f32::INFINITY;
-                    }
-                    dv
-                }
-                Value::Uniform(v) => {
-                    ui.spacing_mut().item_spacing.x = 4.0; // default is 8.0?
-                    ui.add(drag_value(&mut v.0, suffix).clamp_range(0.0..=v.1))
-                        | ui.label("-")
-                        | ui.add(drag_value(&mut v.1, suffix).clamp_range(v.0..=f32::MAX))
-                }
-                _ => ui.colored_label(ui.visuals().error_fg_color, "unhandled value type"),
-            }
+            | value_fn(value, suffix, ui)
     })
     .inner
+}
+
+fn value_f32<'a>(value: &'a mut Value<f32>, suffix: &str, ui: &mut egui::Ui) -> Change {
+    match value {
+        Value::Single(v) => {
+            let mut response = ui.add(drag_value(v, suffix));
+            if suffix == "period" && response.clicked_by(egui::PointerButton::Secondary) {
+                response.mark_changed();
+                *v = f32::INFINITY;
+            }
+            response
+        }
+        Value::Uniform(v) => {
+            ui.spacing_mut().item_spacing.x = 4.0; // default is 8.0?
+            ui.add(drag_value(&mut v.0, suffix).clamp_range(0.0..=v.1))
+                | ui.label("-")
+                | ui.add(drag_value(&mut v.1, suffix).clamp_range(v.0..=f32::MAX))
+        }
+        _ => ui.colored_label(ui.visuals().error_fg_color, "unhandled value type"),
+    }
+    .into()
+}
+
+fn ui_set_color(color: &mut SetColorModifier, ui: &mut egui::Ui) -> Change {
+    ui_value(
+        ui.id().with("set_color"),
+        &mut color.color,
+        "",
+        ui,
+        value_color,
+    )
+}
+
+fn color_edit_button(color: &mut Vec4, ui: &mut egui::Ui) -> bool {
+    use egui::color_picker::*;
+
+    let mut hsva = gradient::hsva(color);
+    if color_edit_button_hsva(ui, &mut hsva, Alpha::OnlyBlend).changed() {
+        *color = Vec4::from_slice(&hsva.to_rgba_premultiplied());
+        true
+    } else {
+        false
+    }
+}
+
+fn value_color<'a>(value: &'a mut Value<Vec4>, _suffix: &str, ui: &mut egui::Ui) -> Change {
+    match value {
+        Value::Single(v) => color_edit_button(v, ui).into(),
+        Value::Uniform(v) => {
+            ui.spacing_mut().item_spacing.x = 4.0; // default is 8.0?
+            let c1 = color_edit_button(&mut v.0, ui);
+            ui.label("-");
+            let c2 = color_edit_button(&mut v.1, ui);
+            (c1 || c2).into()
+        }
+        _ => ui
+            .colored_label(ui.visuals().error_fg_color, "unhandled value type")
+            .into(),
+    }
 }
 
 #[allow(unused)]

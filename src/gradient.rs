@@ -323,11 +323,11 @@ impl From<SizeGradient> for SizeOverLifetimeModifier {
 }
 
 // This is still the fastest way to Color32?
-fn rgba(c: &Vec4) -> Rgba {
+pub fn rgba(c: &Vec4) -> Rgba {
     Rgba::from_rgba_premultiplied(c[0], c[1], c[2], c[3])
 }
 
-fn hsva(c: &Vec4) -> Hsva {
+pub fn hsva(c: &Vec4) -> Hsva {
     Hsva::from_rgba_premultiplied(c[0], c[1], c[2], c[3])
 }
 

@@ -83,6 +83,12 @@ impl std::ops::BitOr<egui::Response> for Change {
     }
 }
 
+impl From<()> for Change {
+    fn from(_: ()) -> Self {
+        Change::Change(false)
+    }
+}
+
 impl From<bool> for Change {
     fn from(b: bool) -> Self {
         Change::Change(b)
