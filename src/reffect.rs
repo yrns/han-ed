@@ -22,8 +22,9 @@ pub struct REffect {
     pub init_velocity: Option<InitVelocity>,
     pub init_size: Option<InitSizeModifier>,
     pub init_age: Option<InitAgeModifier>,
-    // So this is required unless lifetime is a property? Remove the Option?
+    // So this is required unless lifetime is a property? Or InitAttributeModifier.
     pub init_lifetime: Option<InitLifetimeModifier>,
+    //pub init_attributes: Vec<InitAttributeModifier>,
 
     // UpdateModifiers(s)
     pub update_accel: Option<UpdateAccel>,

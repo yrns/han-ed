@@ -402,8 +402,7 @@ fn han_ed_ui(
                                                     &mut re.init_age,
                                                     &mut env,
                                                     ui,
-                                                ) | ui_option_reflect(
-                                                    "Lifetime",
+                                                ) | ui_init_lifetime(
                                                     &mut re.init_lifetime,
                                                     &mut env,
                                                     ui,
@@ -508,6 +507,25 @@ fn han_ed_ui(
                 }
             });
     });
+}
+
+fn ui_init_lifetime(
+    v: &mut Option<InitLifetimeModifier>,
+    env: &mut InspectorUi,
+    ui: &mut egui::Ui,
+) -> Change {
+    ui.horizontal(|ui| {
+        let change = ui_option_reflect("Lifetime", v, env, ui);
+
+        if v.is_none() {
+            ui.label("⚠").on_hover_text_at_pointer(
+                "Effects require a lifetime unless provided via InitAttributeModifier.",
+            );
+        }
+
+        change
+    })
+    .merge()
 }
 
 // Probably way easier to validate on save.
