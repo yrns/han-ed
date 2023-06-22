@@ -409,11 +409,11 @@ fn han_ed_ui(
                                                 )
                                             })
                                             | header!(ui, "Update Modifiers", |ui| {
-                                                ui_option_reflect(
+                                                ui_option(
                                                     "Acceleration",
                                                     &mut re.update_accel,
-                                                    &mut env,
                                                     ui,
+                                                    ui_update_accel,
                                                 ) | ui_option_reflect(
                                                     "Force Field",
                                                     &mut re.update_force_field,
@@ -590,6 +590,38 @@ fn short_circuit(
     None
 }
 
+fn ui_update_accel(accel: &mut UpdateAccel, ui: &mut egui::Ui) -> Change {
+    use bevy::reflect::{Enum, TypeInfo, Typed};
+
+    let TypeInfo::Enum(ty) = UpdateAccel::type_info() else {
+        return ui_error(ui, "not an enum").into();
+    };
+
+    egui::ComboBox::from_id_source(ui.id().with(ty.name()))
+        .selected_text(accel.variant_name())
+        .show_ui(ui, |ui| {
+            ty.iter()
+                .enumerate()
+                .map(|(i, v)| ui.selectable_label(accel.variant_index() == i, v.name()))
+                .reduce(|a, b| a | b)
+        })
+        .merge()
+        | match accel {
+            UpdateAccel::Linear(linear) => ui_linear_accel(linear, ui),
+            UpdateAccel::Radial(_) => todo!(),
+            UpdateAccel::Tangent(_) => todo!(),
+        }
+}
+
+fn ui_linear_accel(linear: &mut AccelModifier, ui: &mut egui::Ui) -> Change {
+    match &mut linear.accel {
+        ValueOrProperty::Value(graph::Value::Float3(v)) => value_vec3_single(v, "", ui).into(),
+        ValueOrProperty::Property(_) => todo!(),
+        ValueOrProperty::ResolvedProperty(_) => todo!(),
+        _ => todo!(),
+    }
+}
+
 fn ui_particle_texture(
     label: &str,
     data: &mut ParticleTexture,
@@ -623,7 +655,7 @@ fn ui_particle_texture(
                 // None is the first option.
                 let none = ui.selectable_value(data, ParticleTexture::None, "None");
                 if none.changed {
-                    return Some(none.into());
+                    return Some(none);
                 }
 
                 // We need to filter out textures that don't work for effects like D3 textures.
@@ -775,7 +807,7 @@ where
                         Value::Uniform((v, _)) => {
                             *value = Value::Single(*v);
                             single.mark_changed();
-                            return Some(single.into());
+                            return Some(single);
                         }
                         _ => (),
                     }
@@ -814,6 +846,11 @@ where
     .inner
 }
 
+#[inline]
+fn ui_error(ui: &mut egui::Ui, str: &str) -> egui::Response {
+    ui.colored_label(ui.visuals().error_fg_color, str)
+}
+
 fn value_f32<'a>(value: &'a mut Value<f32>, suffix: &str, ui: &mut egui::Ui) -> Change {
     match value {
         Value::Single(v) => {
@@ -830,7 +867,32 @@ fn value_f32<'a>(value: &'a mut Value<f32>, suffix: &str, ui: &mut egui::Ui) -> 
                 | ui.label("-")
                 | ui.add(drag_value(&mut v.1, suffix).clamp_range(v.0..=f32::MAX))
         }
-        _ => ui.colored_label(ui.visuals().error_fg_color, "unhandled value type"),
+        _ => ui_error(ui, "unhandled value type"),
+    }
+    .into()
+}
+
+fn value_vec3_single(v: &mut Vec3, suffix: &str, ui: &mut egui::Ui) -> egui::Response {
+    ui.add(drag_value(&mut v.x, suffix))
+        | ui.add(drag_value(&mut v.y, suffix))
+        | ui.add(drag_value(&mut v.z, suffix))
+}
+
+fn value_vec3<'a>(value: &'a mut Value<Vec3>, suffix: &str, ui: &mut egui::Ui) -> Change {
+    match value {
+        Value::Single(v) => value_vec3_single(v, suffix, ui),
+        Value::Uniform((v0, v1)) => {
+            ui.spacing_mut().item_spacing.x = 4.0; // default is 8.0?
+
+            ui.add(drag_value(&mut v0.x, suffix).clamp_range(0.0..=v1.x))
+                | ui.add(drag_value(&mut v0.y, suffix).clamp_range(0.0..=v1.y))
+                | ui.add(drag_value(&mut v0.z, suffix).clamp_range(0.0..=v1.z))
+                | ui.label("-")
+                | ui.add(drag_value(&mut v1.x, suffix).clamp_range(v0.x..=f32::MAX))
+                | ui.add(drag_value(&mut v1.y, suffix).clamp_range(v0.y..=f32::MAX))
+                | ui.add(drag_value(&mut v1.z, suffix).clamp_range(v0.z..=f32::MAX))
+        }
+        _ => ui_error(ui, "unhandled value type"),
     }
     .into()
 }

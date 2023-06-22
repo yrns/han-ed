@@ -11,9 +11,15 @@ impl Merge for egui::InnerResponse<Change> {
 }
 
 // For ComboBox, we only return the item response that's changed, or the header when closed.
-impl Merge for egui::InnerResponse<Option<Option<Change>>> {
+impl<T> Merge for egui::InnerResponse<Option<Option<T>>>
+where
+    T: Into<Change>,
+{
     fn merge(self) -> Change {
-        self.inner.flatten().unwrap_or(self.response.into())
+        self.inner
+            .flatten()
+            .map(Into::into)
+            .unwrap_or(self.response.into())
     }
 }
 
