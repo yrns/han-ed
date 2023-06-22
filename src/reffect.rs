@@ -20,6 +20,7 @@ pub struct REffect {
     // InitModifier(s)
     pub init_position: InitPosition,
     pub init_velocity: Option<InitVelocity>,
+    // TODO this needs to be limited to D1/D2
     pub init_size: Option<InitSizeModifier>,
     pub init_age: Option<InitAgeModifier>,
     // So this is required unless lifetime is a property? Or InitAttributeModifier.
@@ -153,6 +154,12 @@ impl REffect {
         }
 
         if let Some(m) = self.init_size.as_ref() {
+            if matches!(m.size, DimValue::D2(_)) {
+                effect = effect.init(InitAttributeModifier {
+                    attribute: Attribute::SIZE2,
+                    value: ValueOrProperty::Value(Vec2::new(1.0, 1.0).into()),
+                });
+            }
             effect = effect.init(m.clone());
         }
 
