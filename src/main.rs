@@ -663,22 +663,28 @@ fn ui_radial_accel(radial: &mut RadialAccelModifier, ui: &mut egui::Ui) -> Chang
 fn ui_tangent_accel(tangent: &mut TangentAccelModifier, ui: &mut egui::Ui) -> Change {
     match &mut tangent.accel {
         ValueOrProperty::Value(graph::Value::Float(v)) => {
-            Change::Response(ui.add(drag_value(v, "")))
-                | ui.vertical(|ui| {
-                    hl!("Origin", ui, |ui| value_vec3_single(
-                        &mut tangent.origin,
-                        "",
-                        ui
-                    )) | hl!("Axis", ui, |ui| value_vec3_single(
-                        &mut tangent.axis,
-                        "",
-                        ui
-                    ))
+            egui::Grid::new("tangent_accel")
+                .num_columns(2)
+                .show(ui, |ui| {
+                    ui.label("Accel.");
+                    let accel = ui.add(drag_value(v, ""));
+                    ui.end_row();
+
+                    ui.label("Origin");
+                    let origin = value_vec3_single(&mut tangent.origin, "", ui);
+                    ui.end_row();
+
+                    ui.label("Axis");
+                    let axis = value_vec3_single(&mut tangent.axis, "", ui);
+
+                    accel | origin | axis
                 })
                 .inner
         }
-        _ => ui_error(ui, "unhandled").into(),
+
+        _ => ui_error(ui, "unhandled"),
     }
+    .into()
 }
 
 fn ui_particle_texture(
