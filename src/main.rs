@@ -590,36 +590,75 @@ fn short_circuit(
     None
 }
 
+macro_rules! variant_label {
+    ($ui:expr, $value:expr, $label:literal, $variant:pat, $default:expr) => {{
+        let selected = matches!($value, $variant);
+        let label = $ui.selectable_label(selected, $label);
+        if label.clicked() && !selected {
+            *$value = $default;
+        }
+        label
+    }};
+}
+
+// Not recreating a reflective wheel...
 fn ui_update_accel(accel: &mut UpdateAccel, ui: &mut egui::Ui) -> Change {
-    use bevy::reflect::{Enum, TypeInfo, Typed};
-
-    let TypeInfo::Enum(ty) = UpdateAccel::type_info() else {
-        return ui_error(ui, "not an enum").into();
-    };
-
-    egui::ComboBox::from_id_source(ui.id().with(ty.name()))
-        .selected_text(accel.variant_name())
+    egui::ComboBox::from_id_source(ui.id().with("update_accel"))
+        .selected_text(match accel {
+            UpdateAccel::Linear(_) => "Linear",
+            UpdateAccel::Radial(_) => "Radial",
+            UpdateAccel::Tangent(_) => "Tangent",
+        })
         .show_ui(ui, |ui| {
-            ty.iter()
-                .enumerate()
-                .map(|(i, v)| ui.selectable_label(accel.variant_index() == i, v.name()))
-                .reduce(|a, b| a | b)
+            (variant_label!(
+                ui,
+                accel,
+                "Linear",
+                UpdateAccel::Linear(_),
+                UpdateAccel::Linear(AccelModifier::constant(Vec3::ZERO))
+            ) | variant_label!(
+                ui,
+                accel,
+                "Radial",
+                UpdateAccel::Radial(_),
+                UpdateAccel::Radial(RadialAccelModifier::constant(Vec3::ZERO, 1.0))
+            ) | variant_label!(
+                ui,
+                accel,
+                "Tangent",
+                UpdateAccel::Tangent(_),
+                UpdateAccel::Tangent(TangentAccelModifier::constant(Vec3::ZERO, Vec3::Y, 1.0))
+            ))
+            .into()
         })
         .merge()
         | match accel {
             UpdateAccel::Linear(linear) => ui_linear_accel(linear, ui),
-            UpdateAccel::Radial(_) => todo!(),
+            UpdateAccel::Radial(radial) => ui_radial_accel(radial, ui),
             UpdateAccel::Tangent(_) => todo!(),
         }
 }
 
 fn ui_linear_accel(linear: &mut AccelModifier, ui: &mut egui::Ui) -> Change {
     match &mut linear.accel {
-        ValueOrProperty::Value(graph::Value::Float3(v)) => value_vec3_single(v, "", ui).into(),
-        ValueOrProperty::Property(_) => todo!(),
-        ValueOrProperty::ResolvedProperty(_) => todo!(),
-        _ => todo!(),
+        ValueOrProperty::Value(graph::Value::Float3(v)) => value_vec3_single(v, "", ui),
+        // ValueOrProperty::Property(_) => todo!(),
+        // ValueOrProperty::ResolvedProperty(_) => todo!(),
+        _ => ui_error(ui, "unhandled"),
     }
+    .into()
+}
+
+fn ui_radial_accel(radial: &mut RadialAccelModifier, ui: &mut egui::Ui) -> Change {
+    match &mut radial.accel {
+        ValueOrProperty::Value(graph::Value::Float(v)) => {
+            ui.add(drag_value(v, ""))
+                | ui.label("Origin")
+                | value_vec3_single(&mut radial.origin, "", ui)
+        }
+        _ => ui_error(ui, "unhandled"),
+    }
+    .into()
 }
 
 fn ui_particle_texture(
@@ -878,6 +917,7 @@ fn value_vec3_single(v: &mut Vec3, suffix: &str, ui: &mut egui::Ui) -> egui::Res
         | ui.add(drag_value(&mut v.z, suffix))
 }
 
+#[allow(unused)]
 fn value_vec3<'a>(value: &'a mut Value<Vec3>, suffix: &str, ui: &mut egui::Ui) -> Change {
     match value {
         Value::Single(v) => value_vec3_single(v, suffix, ui),
