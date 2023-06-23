@@ -502,6 +502,7 @@ dependencies = [
 [[package]]
 name = "bevy_hanabi"
 version = "0.6.1"
+source = "git+https://github.com/yrns/bevy_hanabi.git?branch=reflect#24eb39fc0449b203939b03fe1abc44c16a85149e"
 dependencies = [
  "anyhow",
  "bevy",
