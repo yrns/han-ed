@@ -634,7 +634,7 @@ fn ui_update_accel(accel: &mut UpdateAccel, ui: &mut egui::Ui) -> Change {
         | match accel {
             UpdateAccel::Linear(linear) => ui_linear_accel(linear, ui),
             UpdateAccel::Radial(radial) => ui_radial_accel(radial, ui),
-            UpdateAccel::Tangent(_) => todo!(),
+            UpdateAccel::Tangent(tangent) => ui_tangent_accel(tangent, ui),
         }
 }
 
@@ -658,6 +658,27 @@ fn ui_radial_accel(radial: &mut RadialAccelModifier, ui: &mut egui::Ui) -> Chang
         _ => ui_error(ui, "unhandled"),
     }
     .into()
+}
+
+fn ui_tangent_accel(tangent: &mut TangentAccelModifier, ui: &mut egui::Ui) -> Change {
+    match &mut tangent.accel {
+        ValueOrProperty::Value(graph::Value::Float(v)) => {
+            Change::Response(ui.add(drag_value(v, "")))
+                | ui.vertical(|ui| {
+                    hl!("Origin", ui, |ui| value_vec3_single(
+                        &mut tangent.origin,
+                        "",
+                        ui
+                    )) | hl!("Axis", ui, |ui| value_vec3_single(
+                        &mut tangent.axis,
+                        "",
+                        ui
+                    ))
+                })
+                .inner
+        }
+        _ => ui_error(ui, "unhandled").into(),
+    }
 }
 
 fn ui_particle_texture(
