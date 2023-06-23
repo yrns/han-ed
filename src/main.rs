@@ -8,7 +8,6 @@ use std::{
     borrow::Cow,
     fs::File,
     io::Write,
-    mem::discriminant,
     path::{Path, PathBuf},
 };
 
@@ -836,10 +835,7 @@ where
                 _ => "Unhandled",
             })
             .show_ui(ui, |ui| {
-                let mut single = ui.selectable_label(
-                    discriminant(value) == discriminant(&Value::Single(T::default())),
-                    "Single",
-                );
+                let mut single = ui.selectable_label(matches!(value, Value::Single(_)), "Single");
 
                 if single.clicked() {
                     match value {
@@ -852,10 +848,8 @@ where
                     }
                 }
 
-                let mut uniform = ui.selectable_label(
-                    discriminant(value) == discriminant(&Value::Uniform(Default::default())),
-                    "Uniform",
-                );
+                let mut uniform =
+                    ui.selectable_label(matches!(value, Value::Uniform(_)), "Uniform");
 
                 if uniform.clicked() {
                     match value {
