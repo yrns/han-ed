@@ -592,9 +592,10 @@ fn short_circuit(
 macro_rules! variant_label {
     ($ui:expr, $value:expr, $label:literal, $variant:pat, $default:expr) => {{
         let selected = matches!($value, $variant);
-        let label = $ui.selectable_label(selected, $label);
+        let mut label = $ui.selectable_label(selected, $label);
         if label.clicked() && !selected {
             *$value = $default;
+            label.mark_changed();
         }
         label
     }};
