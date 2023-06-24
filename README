@@ -1,3 +1,14 @@
 han-ed
 
 A playground for hanabi.
+
+Demo video here: https://youtu.be/4CswfD8atx4
+
+Some missing things:
+
+[ ] Camera controls
+[ ] Saving the current scene
+[ ] Live effect motion, transforms
+[ ] Gizmos, modifier visualizations
+[ ] 2d version?
+[ ] Tooltips generated from docstrings
