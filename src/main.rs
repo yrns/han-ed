@@ -88,8 +88,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_plugins(
             DefaultPlugins
                 .set(LogPlugin {
-                    level: bevy::log::Level::WARN,
-                    filter: "bevy_hanabi=warn,han-ed=debug".to_string(),
+                    level: bevy::log::Level::INFO,
+                    // lots of wgpu/naga info
+                    filter: "wgpu=warn,naga=warn,han-ed=debug".to_string(),
                 })
                 // .set(AssetPlugin {
                 //     watch_for_changes: ChangeWatcher::with_delay(Duration::from_millis(400)),
@@ -98,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .set(RenderPlugin { wgpu_settings })
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        title: "han-ed".to_string(),
+                        title: "floating han-ed".to_string(),
                         ..default()
                     }),
                     ..default()
@@ -299,6 +300,7 @@ fn han_ed_ui(
                                             re_changed |= ui
                                                 .add(
                                                     egui::TextEdit::singleline(&mut re.name)
+                                                        .desired_width(140.0)
                                                         .id_source("name"),
                                                 )
                                                 .changed();
