@@ -29,7 +29,7 @@ pub struct REffect {
 
     // UpdateModifiers(s)
     pub update_accel: Option<UpdateAccel>,
-    pub update_force_field: Option<ForceFieldModifier>,
+    pub update_force_field: Vec<ForceFieldSource>,
     pub update_linear_drag: Option<LinearDragModifier>,
     pub update_aabb_kill: Option<AabbKillModifier>,
 
@@ -179,8 +179,10 @@ impl REffect {
             };
         }
 
-        if let Some(m) = self.update_force_field.as_ref() {
-            effect = effect.update(m.clone());
+        if !self.update_force_field.is_empty() {
+            effect = effect.update(ForceFieldModifier::new(
+                self.update_force_field.iter().cloned(),
+            ));
         }
 
         if let Some(m) = self.update_linear_drag.as_ref() {

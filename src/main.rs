@@ -413,7 +413,7 @@ fn han_ed_ui(
                                                     &mut re.update_accel,
                                                     ui,
                                                     ui_update_accel,
-                                                ) | ui_option_reflect(
+                                                ) | ui_reflect(
                                                     "Force Field",
                                                     &mut re.update_force_field,
                                                     &mut env,

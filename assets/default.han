@@ -45,7 +45,7 @@
             lifetime: Single(5.0),
         )),
         update_accel: None,
-        update_force_field: None,
+        update_force_field: [],
         update_linear_drag: None,
         update_aabb_kill: None,
         render_particle_texture: Path("plus.png"),
